@@ -1,0 +1,14 @@
+{
+  "name": "dumbgpt",
+  "module": "src/index.ts",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "type": "module",
+  "dependencies": {
+    "remeda": "^2.12.0"
+  }
+}
