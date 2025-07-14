@@ -1,6 +1,7 @@
-import { useState, memo } from 'react';
-import { Box, Text, useInput, useApp, useFocus } from 'ink';
+import { memo } from 'react';
+import { Box, Text, useFocus } from 'ink';
 import { colors } from './theme.js';
+import { useInputHistory } from './hooks/useInputHistory.js';
 
 interface InputAreaProps {
   value: string;
@@ -11,55 +12,18 @@ interface InputAreaProps {
   contextSize: number;
   maxTokens: number;
   isLoading: boolean;
+  quickCompletions?: string[];
 }
 
-export const InputArea = memo(function InputArea({ value, onChange, onSubmit, disabled, modelType, contextSize, maxTokens, isLoading }: InputAreaProps) {
-  const [inputValue, setInputValue] = useState('');
-  const { exit } = useApp();
-  useFocus({ autoFocus: true });
-
-  const MAX_LINES = 5;
-  const lines = inputValue.split('\n');
-
-  useInput((input, key) => {
-    if (key.ctrl && input === 'c') {
-      exit();
-      return;
-    }
-
-    if (disabled) return;
-
-    // Check if input ends with backslash and user pressed Enter
-    if (key.return && inputValue.endsWith('\\')) {
-      // Remove the backslash and add a new line
-      if (lines.length < MAX_LINES) {
-        setInputValue(prev => prev.slice(0, -1) + '\n');
-      }
-      return;
-    }
-
-    // Enter submits the input
-    if (key.return) {
-      onSubmit(inputValue);
-      setInputValue('');
-      return;
-    }
-
-    // Backspace handling
-    if (key.backspace || key.delete) {
-      setInputValue(prev => {
-        if (prev.length === 0) return prev;
-        return prev.slice(0, -1);
-      });
-      return;
-    }
-
-    if (key.ctrl) return;
-
-    if (input) {
-      setInputValue(prev => prev + input);
-    }
+export const InputArea = memo(function InputArea({ value, onChange, onSubmit, disabled, modelType, contextSize, maxTokens, isLoading, quickCompletions }: InputAreaProps) {
+  const { inputValue, lines, stats } = useInputHistory({
+    onSubmit,
+    disabled,
+    maxLines: 5,
+    maxHistory: 50
   });
+
+  useFocus({ autoFocus: true });
 
   const terminalWidth = process.stdout.columns || 80;
 
@@ -90,12 +54,26 @@ export const InputArea = memo(function InputArea({ value, onChange, onSubmit, di
       
       <Box justifyContent="space-between">
         <Text color={colors.textDim}>
-          enter send • \+enter new line ({lines.length}/{MAX_LINES})
+          enter send • \+enter new line • ↑↓ history ({stats.currentLines}/{5})
         </Text>
         <Text color={colors.textDim}>
-          {modelType === 'code' ? 'Java' : 'Text'} Model • {contextSize}:{maxTokens}
+          {modelType === 'code' ? 'JS/TS' : 'Text'} Model • {contextSize}:{maxTokens} • History: {stats.historyCount}
         </Text>
       </Box>
+      
+      {/* Quick Completions */}
+      {quickCompletions && quickCompletions.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={colors.textDim}>Quick suggestions:</Text>
+          <Box flexDirection="row" flexWrap="wrap" gap={1}>
+            {quickCompletions.slice(0, 6).map((completion, index) => (
+              <Box key={index} borderStyle="round" borderColor={colors.textDim} paddingX={1}>
+                <Text color={colors.secondary}>{completion}</Text>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 });

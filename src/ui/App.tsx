@@ -3,13 +3,14 @@ import { Box, Text, useApp } from 'ink';
 import BigText from 'ink-big-text';
 import { ChatArea } from './ChatArea.js';
 import { InputArea } from './InputArea.js';
+import { TrainingProgress } from './TrainingProgress.js';
 import { createCodeModel } from '../code-model.js';
 import { createTextModel } from '../text-model.js';
 import { colors } from './theme.js';
 
 interface Message {
   type: 'user' | 'assistant';
-  content: string;
+  content: string | string[]; // Can be string for commands or string[] for generated tokens
   timestamp: Date;
 }
 
@@ -17,6 +18,7 @@ export default function App() {
   const { exit } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [quickCompletions, setQuickCompletions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [model, setModel] = useState<any>(null);
   const [config, setConfig] = useState({
@@ -25,14 +27,55 @@ export default function App() {
     modelType: 'code' as 'text' | 'code'
   });
 
+  // Training progress state
+  const [trainingPhase, setTrainingPhase] = useState<'scanning' | 'reading' | 'training' | 'complete'>('scanning');
+  const [filesScanned, setFilesScanned] = useState(0);
+  const [filesRead, setFilesRead] = useState(0);
+  const [currentFile, setCurrentFile] = useState('');
+  const [totalFiles, setTotalFiles] = useState(0);
+  const [totalSize, setTotalSize] = useState(0);
+  const [linesRead, setLinesRead] = useState(0);
+  const [showTraining, setShowTraining] = useState(true);
+
   useEffect(() => {
     async function initializeModel() {
       setIsLoading(true);
+      setShowTraining(true);
+      setTrainingPhase('scanning');
+      
       try {
+        const progressCallback = {
+          onScanProgress: (scanned: number, file?: string) => {
+            setFilesScanned(scanned);
+            if (file) {
+              setCurrentFile(file);
+            }
+          },
+          onReadProgress: (read: number, total: number, file: string, fileSize: number, totalSize: number, linesRead: number) => {
+            setTrainingPhase('reading');
+            setFilesRead(read);
+            setTotalFiles(total);
+            setCurrentFile(file);
+            setTotalSize(totalSize);
+            setLinesRead(linesRead);
+          },
+          onTrainingStart: () => {
+            setTrainingPhase('training');
+          },
+          onTrainingComplete: () => {
+            setTrainingPhase('complete');
+          }
+        };
+
         const newModel = config.modelType === 'code' 
-          ? await createCodeModel(config.contextSize, config.maxOutputTokens)
+          ? await createCodeModel(config.contextSize, config.maxOutputTokens, progressCallback)
           : await createTextModel(config.contextSize, config.maxOutputTokens);
         setModel(newModel);
+        
+        // Initialize with helpful suggestions
+        if (newModel.getQuickCompletions) {
+          setQuickCompletions(newModel.getQuickCompletions(''));
+        }
       } catch (error) {
         setMessages(prev => [...prev, {
           type: 'assistant',
@@ -68,14 +111,19 @@ export default function App() {
     setIsLoading(true);
     try {
       const generatedTokens = model.generateText(text);
-      const response = model.joiner(generatedTokens);
+      console.log('Generated tokens:', generatedTokens.slice(0, 10)); // Debug: see what tokens look like
       
       const assistantMessage: Message = {
         type: 'assistant',
-        content: response,
+        content: generatedTokens, // Store the actual tokens array
         timestamp: new Date()
       };
       setMessages(prev => [...prev, assistantMessage]);
+      
+      // Update quick completions based on the current input
+      if (model.getQuickCompletions) {
+        setQuickCompletions(model.getQuickCompletions(text));
+      }
     } catch (error) {
       const errorMessage: Message = {
         type: 'assistant',
@@ -95,12 +143,28 @@ export default function App() {
       case 'help':
         setMessages(prev => [...prev, {
           type: 'assistant',
-          content: `Commands:
+          content: `🤖 DumbGPT Smart Code Completion
+
+SMART FEATURES:
+• No need for exact context tokens - just start typing!
+• Function detection: Type "function" to get function completions
+• Class detection: Type "class" to get class completions  
+• Import detection: Type "import" to get import completions
+• Pattern matching: Type "if(", "for(", "=>" for smart completions
+• Quick suggestions shown below input box
+
+COMMANDS:
 :help - Show this help
-:config - Show current configuration
+:config - Show current configuration  
 :set <key> <value> - Set configuration
 :clear - Clear messages
 :quit - Exit application
+
+EXAMPLES:
+• "function add" → Smart function completion
+• "const data = " → Variable assignment completion
+• "if (" → Conditional statement completion
+• "import " → Module import completion
 
 Config keys: contextSize, maxOutputTokens, modelType`,
           timestamp: new Date()
@@ -213,6 +277,21 @@ Model Type: ${config.modelType}`,
   };
 
 
+  if (showTraining) {
+    return (
+      <TrainingProgress
+        phase={trainingPhase}
+        filesScanned={filesScanned}
+        filesRead={filesRead}
+        currentFile={currentFile}
+        totalFiles={totalFiles}
+        totalSize={totalSize}
+        linesRead={linesRead}
+        onComplete={() => setShowTraining(false)}
+      />
+    );
+  }
+
   return (
     <Box flexDirection="column" height="100%" width="100%" padding={2}>
       {/* Header */}
@@ -254,6 +333,7 @@ Model Type: ${config.modelType}`,
         contextSize={config.contextSize}
         maxTokens={config.maxOutputTokens}
         isLoading={isLoading}
+        quickCompletions={quickCompletions}
       />
     </Box>
   );
