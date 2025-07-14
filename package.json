@@ -1,6 +1,10 @@
 {
   "name": "dumbgpt",
-  "module": "src/index.ts",
+  "module": "src/tui.tsx",
+  "scripts": {
+    "start": "bun run src/tui.tsx",
+    "dev": "bun --watch src/tui.tsx"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -9,6 +13,10 @@
   },
   "type": "module",
   "dependencies": {
+    "@types/react": "^19.1.8",
+    "ink": "^6.0.1",
+    "ink-big-text": "^2.0.0",
+    "react": "^19.1.0",
     "remeda": "^2.12.0"
   }
 }

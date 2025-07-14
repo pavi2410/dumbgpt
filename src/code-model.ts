@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { train, generateText } from './core/generator.js';
 import { tokenizeJavaCode, joiner } from './tokenizers/code.js';
-import { runCLI } from './core/cli.js';
 
 export async function createCodeModel(CONTEXT_SIZE: number, MAX_OUTPUT_TOKENS: number) {
     console.time('Reading corpus');
@@ -25,7 +24,6 @@ export async function createCodeModel(CONTEXT_SIZE: number, MAX_OUTPUT_TOKENS: n
     return {
         markovChain,
         generateText: generateTextWithConfig,
-        joiner,
-        runCLI: () => runCLI(markovChain, generateTextWithConfig, joiner, CONTEXT_SIZE, MAX_OUTPUT_TOKENS)
+        joiner
     };
 }
