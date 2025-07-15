@@ -54,12 +54,10 @@ try {
 
   console.log('\n💾 Saving model to disk...');
   
-  // Save model data (we'll serialize the important parts)
+  // Save the complete trained model including weights
   const modelToSave = {
-    config: modelData.config,
+    ...modelData.model.toJSON(),
     stats: modelData.stats,
-    // Note: We can't easily serialize the trained model weights without proper serialization
-    // For now, we'll save the configuration and stats
     trained: true,
     timestamp: new Date().toISOString()
   };

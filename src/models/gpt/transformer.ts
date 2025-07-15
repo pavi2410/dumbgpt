@@ -403,4 +403,127 @@ export class MiniGPT {
   getConfig(): GPTConfig {
     return { ...this.config };
   }
+
+  /**
+   * Serialize model to JSON (for saving to disk)
+   */
+  toJSON(): any {
+    return {
+      config: this.config,
+      tokenEmbedding: {
+        shape: this.tokenEmbedding.shape,
+        data: Array.from(this.tokenEmbedding.data)
+      },
+      positionEmbedding: {
+        shape: this.positionEmbedding.shape,
+        data: Array.from(this.positionEmbedding.data)
+      },
+      blocks: this.blocks.map(block => {
+        const attentionParams = block.attention.getParameters();
+        const feedForwardParams = block.feedForward.getParameters();
+        return {
+          attention: {
+            qWeight: { shape: attentionParams[0].shape, data: Array.from(attentionParams[0].data) },
+            kWeight: { shape: attentionParams[1].shape, data: Array.from(attentionParams[1].data) },
+            vWeight: { shape: attentionParams[2].shape, data: Array.from(attentionParams[2].data) },
+            outWeight: { shape: attentionParams[3].shape, data: Array.from(attentionParams[3].data) }
+          },
+          feedForward: {
+            fc1: { shape: feedForwardParams[0].shape, data: Array.from(feedForwardParams[0].data) },
+            fc2: { shape: feedForwardParams[1].shape, data: Array.from(feedForwardParams[1].data) }
+          },
+          ln1Gamma: { shape: block.ln1Gamma.shape, data: Array.from(block.ln1Gamma.data) },
+          ln1Beta: { shape: block.ln1Beta.shape, data: Array.from(block.ln1Beta.data) },
+          ln2Gamma: { shape: block.ln2Gamma.shape, data: Array.from(block.ln2Gamma.data) },
+          ln2Beta: { shape: block.ln2Beta.shape, data: Array.from(block.ln2Beta.data) }
+        };
+      }),
+      lnF: {
+        gamma: { shape: this.lnF.gamma.shape, data: Array.from(this.lnF.gamma.data) },
+        beta: { shape: this.lnF.beta.shape, data: Array.from(this.lnF.beta.data) }
+      },
+      head: {
+        shape: this.head.shape,
+        data: Array.from(this.head.data)
+      },
+      vocabulary: Array.from(this.tokenizer.vocabulary.entries()),
+      reverseVocabulary: Array.from(this.tokenizer.reverseVocabulary.entries())
+    };
+  }
+
+  /**
+   * Load model from JSON (for loading from disk)
+   */
+  static fromJSON(data: any): MiniGPT {
+    const model = new MiniGPT(data.config);
+    
+    // Restore token embeddings
+    model.tokenEmbedding = new Tensor(data.tokenEmbedding.shape);
+    model.tokenEmbedding.data = new Float32Array(data.tokenEmbedding.data);
+    
+    // Restore position embeddings
+    model.positionEmbedding = new Tensor(data.positionEmbedding.shape);
+    model.positionEmbedding.data = new Float32Array(data.positionEmbedding.data);
+    
+    // Restore transformer blocks
+    model.blocks = data.blocks.map((blockData: any, i: number) => {
+      const block = model.blocks[i];
+      
+      // Restore attention weights
+      const qWeight = new Tensor(blockData.attention.qWeight.shape);
+      qWeight.data = new Float32Array(blockData.attention.qWeight.data);
+      
+      const kWeight = new Tensor(blockData.attention.kWeight.shape);
+      kWeight.data = new Float32Array(blockData.attention.kWeight.data);
+      
+      const vWeight = new Tensor(blockData.attention.vWeight.shape);
+      vWeight.data = new Float32Array(blockData.attention.vWeight.data);
+      
+      const outWeight = new Tensor(blockData.attention.outWeight.shape);
+      outWeight.data = new Float32Array(blockData.attention.outWeight.data);
+      
+      block.attention.setParameters([qWeight, kWeight, vWeight, outWeight]);
+      
+      // Restore feed-forward weights
+      const fc1 = new Tensor(blockData.feedForward.fc1.shape);
+      fc1.data = new Float32Array(blockData.feedForward.fc1.data);
+      
+      const fc2 = new Tensor(blockData.feedForward.fc2.shape);
+      fc2.data = new Float32Array(blockData.feedForward.fc2.data);
+      
+      block.feedForward.setParameters([fc1, fc2]);
+      
+      // Restore layer norm parameters
+      block.ln1Gamma = new Tensor(blockData.ln1Gamma.shape);
+      block.ln1Gamma.data = new Float32Array(blockData.ln1Gamma.data);
+      
+      block.ln1Beta = new Tensor(blockData.ln1Beta.shape);
+      block.ln1Beta.data = new Float32Array(blockData.ln1Beta.data);
+      
+      block.ln2Gamma = new Tensor(blockData.ln2Gamma.shape);
+      block.ln2Gamma.data = new Float32Array(blockData.ln2Gamma.data);
+      
+      block.ln2Beta = new Tensor(blockData.ln2Beta.shape);
+      block.ln2Beta.data = new Float32Array(blockData.ln2Beta.data);
+      
+      return block;
+    });
+    
+    // Restore final layer norm
+    model.lnF.gamma = new Tensor(data.lnF.gamma.shape);
+    model.lnF.gamma.data = new Float32Array(data.lnF.gamma.data);
+    
+    model.lnF.beta = new Tensor(data.lnF.beta.shape);
+    model.lnF.beta.data = new Float32Array(data.lnF.beta.data);
+    
+    // Restore output head
+    model.head = new Tensor(data.head.shape);
+    model.head.data = new Float32Array(data.head.data);
+    
+    // Restore tokenizer vocabulary
+    model.tokenizer.vocabulary = new Map(data.vocabulary);
+    model.tokenizer.reverseVocabulary = new Map(data.reverseVocabulary);
+    
+    return model;
+  }
 }

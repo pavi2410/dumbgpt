@@ -174,6 +174,16 @@ export class MultiHeadAttention {
   }
 
   /**
+   * Set parameters (for model loading)
+   */
+  setParameters(params: Tensor[]): void {
+    this.qWeight = params[0];
+    this.kWeight = params[1];
+    this.vWeight = params[2];
+    this.outWeight = params[3];
+  }
+
+  /**
    * Debug: Print attention weights for visualization
    */
   debugAttentionWeights(x: Tensor): void {
@@ -245,5 +255,13 @@ export class FeedForward {
    */
   getParameters(): Tensor[] {
     return [this.fc1, this.fc2];
+  }
+
+  /**
+   * Set parameters (for model loading)
+   */
+  setParameters(params: Tensor[]): void {
+    this.fc1 = params[0];
+    this.fc2 = params[1];
   }
 }

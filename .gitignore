@@ -176,3 +176,6 @@ dist
 
 # Training corpus data
 corpus/
+
+# Trained model files (large binary data)
+trained-model.json

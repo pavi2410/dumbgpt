@@ -40,8 +40,32 @@ export default function App() {
           const modelData = await readFile('./trained-model.json', 'utf-8');
           const savedModel = JSON.parse(modelData);
           
-          // Create model with saved config
-          const newModel = await createGPTModel(savedModel.config.blockSize, config.maxOutputTokens);
+          // Load the actual trained model weights
+          const { MiniGPT } = await import('../models/gpt/transformer.js');
+          const trainedModel = MiniGPT.fromJSON(savedModel);
+          
+          // Create wrapper with the same interface as createGPTModel
+          const newModel = {
+            model: trainedModel,
+            generateText: (inputText: string) => {
+              try {
+                const generated = trainedModel.generate(inputText, config.maxOutputTokens, 0.8);
+                return generated.split(/\s+/).filter(token => token.length > 0);
+              } catch (error) {
+                console.error('GPT generation error:', error);
+                return ['Error generating text'];
+              }
+            },
+            getQuickCompletions: (inputText: string) => {
+              const patterns = ['function', 'const', 'let', 'class', 'import', 'export', 'if', 'for', 'while', 'return', 'async', 'await', '=>', '{}', '[]', '()'];
+              return patterns.filter(pattern => 
+                pattern.toLowerCase().includes(inputText.toLowerCase()) ||
+                inputText.toLowerCase().includes(pattern.toLowerCase())
+              );
+            },
+            config: savedModel.config,
+            stats: savedModel.stats
+          };
           setModel(newModel);
           
           // Initialize with helpful suggestions
