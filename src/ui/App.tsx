@@ -3,10 +3,10 @@ import { Box, Text, useApp } from 'ink';
 import BigText from 'ink-big-text';
 import { ChatArea } from './ChatArea.js';
 import { InputArea } from './InputArea.js';
-import { TrainingProgress } from './TrainingProgress.js';
-import { createCodeModel } from '../code-model.js';
-import { createTextModel } from '../text-model.js';
+import { createGPTModel } from '../models/index.js';
 import { colors } from './theme.js';
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 
 interface Message {
   type: 'user' | 'assistant';
@@ -21,74 +21,57 @@ export default function App() {
   const [quickCompletions, setQuickCompletions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [model, setModel] = useState<any>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
   const [config, setConfig] = useState({
-    contextSize: 4,
-    maxOutputTokens: 100,
-    modelType: 'code' as 'text' | 'code'
+    contextSize: 32,     // Larger context for GPT
+    maxOutputTokens: 50, // Reasonable output length
+    modelType: 'code' as 'text' | 'code' // Keep for UI compatibility
   });
-
-  // Training progress state
-  const [trainingPhase, setTrainingPhase] = useState<'scanning' | 'reading' | 'training' | 'complete'>('scanning');
-  const [filesScanned, setFilesScanned] = useState(0);
-  const [filesRead, setFilesRead] = useState(0);
-  const [currentFile, setCurrentFile] = useState('');
-  const [totalFiles, setTotalFiles] = useState(0);
-  const [totalSize, setTotalSize] = useState(0);
-  const [linesRead, setLinesRead] = useState(0);
-  const [showTraining, setShowTraining] = useState(true);
 
   useEffect(() => {
     async function initializeModel() {
       setIsLoading(true);
-      setShowTraining(true);
-      setTrainingPhase('scanning');
+      setModelError(null);
       
       try {
-        const progressCallback = {
-          onScanProgress: (scanned: number, file?: string) => {
-            setFilesScanned(scanned);
-            if (file) {
-              setCurrentFile(file);
-            }
-          },
-          onReadProgress: (read: number, total: number, file: string, fileSize: number, totalSize: number, linesRead: number) => {
-            setTrainingPhase('reading');
-            setFilesRead(read);
-            setTotalFiles(total);
-            setCurrentFile(file);
-            setTotalSize(totalSize);
-            setLinesRead(linesRead);
-          },
-          onTrainingStart: () => {
-            setTrainingPhase('training');
-          },
-          onTrainingComplete: () => {
-            setTrainingPhase('complete');
+        // Check if we have a pre-trained model
+        if (existsSync('./trained-model.json')) {
+          // Load pre-trained model
+          const modelData = await readFile('./trained-model.json', 'utf-8');
+          const savedModel = JSON.parse(modelData);
+          
+          // Create model with saved config
+          const newModel = await createGPTModel(savedModel.config.blockSize, config.maxOutputTokens);
+          setModel(newModel);
+          
+          // Initialize with helpful suggestions
+          if (newModel.getQuickCompletions) {
+            setQuickCompletions(newModel.getQuickCompletions(''));
           }
-        };
+          
+          // Show model info
+          setMessages([{
+            type: 'assistant',
+            content: `✅ Loaded pre-trained model (${savedModel.timestamp})
+📊 Training stats: ${savedModel.stats.filesRead} files, ${Math.round(savedModel.stats.totalSize / 1024)}KB
+⚙️ Config: ${savedModel.config.nLayers} layers, ${savedModel.config.nHeads} heads
 
-        const newModel = config.modelType === 'code' 
-          ? await createCodeModel(config.contextSize, config.maxOutputTokens, progressCallback)
-          : await createTextModel(config.contextSize, config.maxOutputTokens);
-        setModel(newModel);
-        
-        // Initialize with helpful suggestions
-        if (newModel.getQuickCompletions) {
-          setQuickCompletions(newModel.getQuickCompletions(''));
+Type your code and I'll help complete it!`,
+            timestamp: new Date()
+          }]);
+        } else {
+          // No pre-trained model found
+          setModelError('No pre-trained model found. Please run "bun run train" first.');
         }
       } catch (error) {
-        setMessages(prev => [...prev, {
-          type: 'assistant',
-          content: `Error loading model: ${error}`,
-          timestamp: new Date()
-        }]);
+        setModelError(`Error loading model: ${error}`);
       } finally {
         setIsLoading(false);
       }
     }
 
     initializeModel();
-  }, [config.contextSize, config.maxOutputTokens, config.modelType]);
+  }, [config.maxOutputTokens]);
 
   const handleSubmit = async (text: string) => {
     if (!text.trim() || !model) return;
@@ -136,32 +119,29 @@ export default function App() {
     }
   };
 
-  const handleCommand = (command: string) => {
-    const [cmd, ...args] = command.slice(1).split(' ');
-    
-    switch (cmd) {
-      case 'help':
+  // Command definitions
+  const commands = [
+    { 
+      name: 'help', 
+      description: 'show help', 
+      shortcut: 'ctrl+x h',
+      handler: () => {
         setMessages(prev => [...prev, {
           type: 'assistant',
           content: `🤖 DumbGPT Smart Code Completion
 
-SMART FEATURES:
-• No need for exact context tokens - just start typing!
-• Function detection: Type "function" to get function completions
-• Class detection: Type "class" to get class completions  
-• Import detection: Type "import" to get import completions
-• Pattern matching: Type "if(", "for(", "=>" for smart completions
-• Quick suggestions shown below input box
+GPT FEATURES:
+• Transformer-based neural language model
+• Trained on JavaScript/TypeScript code from node_modules
+• Context-aware code completion and generation
+• Multi-head attention mechanism for better understanding
+• Quick suggestions based on code patterns
 
 COMMANDS:
-:help - Show this help
-:config - Show current configuration  
-:set <key> <value> - Set configuration
-:clear - Clear messages
-:quit - Exit application
+${commands.map(cmd => `:${cmd.name} - ${cmd.description}`).join('\n')}
 
 EXAMPLES:
-• "function add" → Smart function completion
+• "function add" → GPT generates function completion
 • "const data = " → Variable assignment completion
 • "if (" → Conditional statement completion
 • "import " → Module import completion
@@ -169,20 +149,29 @@ EXAMPLES:
 Config keys: contextSize, maxOutputTokens, modelType`,
           timestamp: new Date()
         }]);
-        break;
-        
-      case 'config':
+      }
+    },
+    {
+      name: 'config',
+      description: 'show configuration',
+      shortcut: 'ctrl+x c',
+      handler: () => {
         setMessages(prev => [...prev, {
           type: 'assistant',
           content: `Configuration:
 Context Size: ${config.contextSize}
 Max Tokens: ${config.maxOutputTokens}
-Model Type: ${config.modelType}`,
+Model Type: ${config.modelType}
+Engine: Mini-GPT (Transformer)`,
           timestamp: new Date()
         }]);
-        break;
-        
-      case 'set':
+      }
+    },
+    {
+      name: 'set',
+      description: 'change settings',
+      shortcut: 'ctrl+x s',
+      handler: (args: string[]) => {
         if (args.length === 2) {
           const [key, value] = args;
           handleConfigChange(key, value);
@@ -193,22 +182,44 @@ Model Type: ${config.modelType}`,
             timestamp: new Date()
           }]);
         }
-        break;
-        
-      case 'clear':
+      }
+    },
+    {
+      name: 'clear',
+      description: 'clear messages',
+      shortcut: 'ctrl+x l',
+      handler: () => {
         setMessages([]);
-        break;
-        
-      case 'quit':
+      }
+    },
+    {
+      name: 'quit',
+      description: 'exit application',
+      shortcut: 'ctrl+x q',
+      handler: () => {
         exit();
-        break;
-        
-      default:
-        setMessages(prev => [...prev, {
-          type: 'assistant',
-          content: `Unknown command: ${cmd}. Type :help for available commands.`,
-          timestamp: new Date()
-        }]);
+      }
+    }
+  ];
+
+  // Create command handlers map from commands array
+  const commandHandlers = commands.reduce((acc, cmd) => {
+    acc[cmd.name] = cmd.handler;
+    return acc;
+  }, {} as Record<string, (args?: string[]) => void>);
+
+  const handleCommand = (command: string) => {
+    const [cmd, ...args] = command.slice(1).split(' ');
+    
+    const handler = commandHandlers[cmd as keyof typeof commandHandlers];
+    if (handler) {
+      handler(args);
+    } else {
+      setMessages(prev => [...prev, {
+        type: 'assistant',
+        content: `Unknown command: ${cmd}. Type :help for available commands.`,
+        timestamp: new Date()
+      }]);
     }
   };
 
@@ -267,6 +278,7 @@ Model Type: ${config.modelType}`,
         }
         break;
         
+        
       default:
         setMessages(prev => [...prev, {
           type: 'assistant',
@@ -277,18 +289,19 @@ Model Type: ${config.modelType}`,
   };
 
 
-  if (showTraining) {
+  if (modelError) {
     return (
-      <TrainingProgress
-        phase={trainingPhase}
-        filesScanned={filesScanned}
-        filesRead={filesRead}
-        currentFile={currentFile}
-        totalFiles={totalFiles}
-        totalSize={totalSize}
-        linesRead={linesRead}
-        onComplete={() => setShowTraining(false)}
-      />
+      <Box flexDirection="column" height="100%" width="100%" padding={2}>
+        <Box justifyContent="center" marginBottom={3}>
+          <BigText text="DUMBGPT" color={colors.brand} />
+        </Box>
+        <Box justifyContent="center" alignItems="center" flexGrow={1}>
+          <Box flexDirection="column" alignItems="center">
+            <Text color={colors.error}>❌ {modelError}</Text>
+            <Text color={colors.textDim} marginTop={1}>Run "bun run train" to create a model first</Text>
+          </Box>
+        </Box>
+      </Box>
     );
   }
 
@@ -301,22 +314,16 @@ Model Type: ${config.modelType}`,
 
       {/* Commands Menu */}
       <Box flexDirection="column" alignItems="center" marginBottom={4}>
-        {[
-          { command: '/help', description: 'show help', shortcut: 'ctrl+x h' },
-          { command: '/config', description: 'show configuration', shortcut: 'ctrl+x c' },
-          { command: '/set', description: 'change settings', shortcut: 'ctrl+x s' },
-          { command: '/train', description: 'retrain model', shortcut: 'ctrl+x t' },
-          { command: '/clear', description: 'clear messages', shortcut: 'ctrl+x l' }
-        ].map((item, index) => (
-          <Box key={item.command} marginBottom={index < 4 ? 1 : 0}>
+        {commands.map((cmd, index) => (
+          <Box key={cmd.name} marginBottom={index < commands.length - 1 ? 1 : 0}>
             <Box width={20}>
-              <Text color={colors.command}>{item.command}</Text>
+              <Text color={colors.command}>:{cmd.name}</Text>
             </Box>
             <Box width={30}>
-              <Text color={colors.textDim}>{item.description}</Text>
+              <Text color={colors.textDim}>{cmd.description}</Text>
             </Box>
             <Box>
-              <Text color={colors.textDim}>{item.shortcut}</Text>
+              <Text color={colors.textDim}>{cmd.shortcut}</Text>
             </Box>
           </Box>
         ))}

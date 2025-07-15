@@ -57,7 +57,7 @@ export const InputArea = memo(function InputArea({ value, onChange, onSubmit, di
           enter send • \+enter new line • ↑↓ history ({stats.currentLines}/{5})
         </Text>
         <Text color={colors.textDim}>
-          {modelType === 'code' ? 'JS/TS' : 'Text'} Model • {contextSize}:{maxTokens} • History: {stats.historyCount}
+          {modelType === 'code' ? 'JS/TS' : 'Text'} GPT • {contextSize}:{maxTokens} • History: {stats.historyCount}
         </Text>
       </Box>
       

@@ -1,9 +1,11 @@
 {
   "name": "dumbgpt",
-  "module": "src/tui.tsx",
+  "module": "src/run.ts",
   "scripts": {
-    "start": "bun run src/tui.tsx",
-    "dev": "bun --watch src/tui.tsx"
+    "start": "bun run src/run.ts",
+    "dev": "bun --watch src/run.ts",
+    "test": "bun test",
+    "train": "bun run src/train.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

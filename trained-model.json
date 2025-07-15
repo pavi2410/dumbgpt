@@ -1,0 +1,16 @@
+{
+  "config": {
+    "vocabSize": 2000,
+    "blockSize": 16,
+    "nLayers": 2,
+    "nHeads": 4,
+    "nEmbed": 128
+  },
+  "stats": {
+    "filesRead": 20,
+    "totalSize": 145960,
+    "linesRead": 5072
+  },
+  "trained": true,
+  "timestamp": "2025-07-15T07:52:38.707Z"
+}
