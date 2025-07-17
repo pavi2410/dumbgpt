@@ -19,7 +19,7 @@ class CharTokenizer:
     def build_vocab(self, texts: list[str]) -> None:
         chars = set("".join(texts))
         for char in chars:
-            if char not in self.vocab.values():
+            if char not in self.vocab:
                 self.vocab[char] = self.vocab_size
                 self.reverse_vocab[self.vocab_size] = char
                 self.vocab_size += 1
