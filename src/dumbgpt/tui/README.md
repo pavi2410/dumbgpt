@@ -1,15 +1,8 @@
 # DumbGPT TUI Interface
 
-A rich terminal user interface for training and interacting with GPT models, built with Textual.
+A rich terminal user interface for interacting with trained GPT models, built with Textual.
 
 ## Features
-
-### 🏋️ Training Interface
-- **Model Configuration**: Set vocabulary size, model dimensions, attention heads, layers
-- **Training Parameters**: Configure learning rate, batch size, training steps, optimizer
-- **Real-time Progress**: Live training progress bar with loss and perplexity tracking
-- **Corpus Loading**: Automatically loads training data from `corpus/` directory
-- **Model Saving**: Save trained models to `models/` directory
 
 ### ✨ Text Generation
 - **Model Loading**: Load and switch between saved models
@@ -24,9 +17,9 @@ A rich terminal user interface for training and interacting with GPT models, bui
 - **Model Statistics**: View file size and modification dates
 
 ### ⚙️ Settings & Configuration
-- **Default Parameters**: Set default values for model and training configuration
-- **Path Configuration**: Customize corpus and models directories
-- **Training Options**: Enable/disable features like auto-save and progress sounds
+- **Generation Defaults**: Set default values for text generation parameters
+- **Path Configuration**: Customize models directory
+- **Interface Options**: Enable/disable UI features like auto-refresh and timestamps
 
 ## Usage
 
@@ -37,18 +30,9 @@ uv run main.py
 ```
 
 ### Navigation
-- **Tab Navigation**: Use `Ctrl+T` (Training), `Ctrl+G` (Generation), `Ctrl+M` (Models)
+- **Tab Navigation**: Use `Ctrl+G` (Generation), `Ctrl+M` (Models), `Ctrl+S` (Settings)
 - **Quit**: Press `Q` to exit the application
 - **Enter**: Continue from welcome screen
-
-### Training a Model
-
-1. **Configure Model**: Set vocabulary size, dimensions, layers in Training tab
-2. **Set Training Parameters**: Choose learning rate, batch size, steps, optimizer
-3. **Specify Corpus**: Point to your training data directory (default: `corpus/`)
-4. **Start Training**: Click "Start Training" to begin
-5. **Monitor Progress**: Watch real-time loss and perplexity metrics
-6. **Save Model**: Click "Save Model" when training completes
 
 ### Generating Text
 
@@ -70,8 +54,7 @@ uv run main.py
 The TUI is built using Textual and consists of several key components:
 
 - **WelcomeScreen**: Initial greeting and project introduction
-- **MainScreen**: Tabbed interface with four main panels
-- **TrainingPanel**: Model training with progress tracking
+- **MainScreen**: Tabbed interface with three main panels
 - **GenerationPanel**: Text generation interface
 - **ModelsPanel**: Model management and browsing
 - **SettingsPanel**: Configuration and preferences
@@ -95,10 +78,9 @@ The TUI requires the following packages:
 ## Educational Value
 
 This TUI demonstrates:
-- **Interactive Learning**: Hands-on experience with GPT training
-- **Real-time Feedback**: Live metrics and progress tracking
-- **Model Management**: Practical model versioning and storage
+- **Model Interaction**: Hands-on experience with trained GPT models
 - **Text Generation**: Interactive exploration of model capabilities
+- **Model Management**: Practical model versioning and storage
 - **Terminal UI Design**: Modern console application development
 
-The interface makes the complex process of transformer training accessible and visual, perfect for educational purposes and experimentation.
+The interface makes trained transformer models accessible and interactive, perfect for experimentation and understanding model behavior. For training models, use Python scripts with the training modules directly.

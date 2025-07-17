@@ -6,9 +6,7 @@ Built with Textual for an interactive learning experience.
 """
 
 import os
-import asyncio
 from pathlib import Path
-from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
@@ -19,7 +17,6 @@ from textual.widgets import (
     Static,
     Label,
     Input,
-    ProgressBar,
     TextArea,
     DataTable,
     TabbedContent,
@@ -30,14 +27,10 @@ from textual.widgets import (
 )
 from textual.screen import Screen
 from textual.binding import Binding
-from textual.reactive import reactive
 from textual import on
 
 from ..model.transformer import GPTModel
 from ..tokenizer.tokenizer import CharTokenizer
-from ..training.dataloader import DataLoader
-from ..training.optimizer import SGD, Adam
-from ..training.trainer import Trainer
 from ..training.utils import save_model, load_model
 
 
@@ -60,8 +53,8 @@ class WelcomeScreen(Screen):
 │         A GPT Implementation from Scratch for Learning         │
 │                                                                 │
 │  📚 Built with pure Python & NumPy for educational purposes    │
-│  🎯 Features: Tokenization, Attention, Training, Generation    │
-│  💻 Rich terminal interface with Textual                       │
+│  🎯 Features: Text Generation, Model Management, Interaction   │
+│  💻 Rich terminal interface for model usage                    │
 │                                                                 │
 │              Press ENTER to continue or Q to quit              │
 └─────────────────────────────────────────────────────────────────┘
@@ -85,19 +78,16 @@ class MainScreen(Screen):
     """Main application screen with tabbed interface."""
 
     BINDINGS = [
-        Binding("ctrl+t", "toggle_training", "Training"),
         Binding("ctrl+g", "toggle_generation", "Generation"),
         Binding("ctrl+m", "toggle_models", "Models"),
+        Binding("ctrl+s", "toggle_settings", "Settings"),
         Binding("q", "quit", "Quit"),
     ]
 
     def compose(self) -> ComposeResult:
         yield Header()
 
-        with TabbedContent(initial="training"):
-            with TabPane("Training", id="training"):
-                yield TrainingPanel()
-
+        with TabbedContent(initial="generation"):
             with TabPane("Generation", id="generation"):
                 yield GenerationPanel()
 
@@ -109,10 +99,6 @@ class MainScreen(Screen):
 
         yield Footer()
 
-    def action_toggle_training(self) -> None:
-        """Switch to training tab."""
-        self.query_one(TabbedContent).active = "training"
-
     def action_toggle_generation(self) -> None:
         """Switch to generation tab."""
         self.query_one(TabbedContent).active = "generation"
@@ -121,275 +107,14 @@ class MainScreen(Screen):
         """Switch to models tab."""
         self.query_one(TabbedContent).active = "models"
 
+    def action_toggle_settings(self) -> None:
+        """Switch to settings tab."""
+        self.query_one(TabbedContent).active = "settings"
+
     def action_quit(self) -> None:
         """Quit the application."""
         self.app.exit()
 
-
-class TrainingPanel(Container):
-    """Training interface with progress tracking."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.trainer: Optional[Trainer] = None
-        self.is_training = reactive(False)
-
-    def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Static("🏋️ Model Training", classes="panel-title")
-
-            with Horizontal():
-                with Vertical():
-                    yield Label("Model Configuration")
-                    yield Input(
-                        placeholder="Vocabulary Size", id="vocab-size", value="1000"
-                    )
-                    yield Input(
-                        placeholder="Model Dimension", id="d-model", value="128"
-                    )
-                    yield Input(
-                        placeholder="Number of Heads", id="num-heads", value="8"
-                    )
-                    yield Input(placeholder="Feed Forward Dim", id="d-ff", value="512")
-                    yield Input(
-                        placeholder="Number of Layers", id="num-layers", value="6"
-                    )
-                    yield Input(
-                        placeholder="Max Sequence Length", id="max-seq-len", value="256"
-                    )
-
-                with Vertical():
-                    yield Label("Training Configuration")
-                    yield Input(
-                        placeholder="Learning Rate", id="learning-rate", value="0.001"
-                    )
-                    yield Input(placeholder="Batch Size", id="batch-size", value="32")
-                    yield Input(
-                        placeholder="Training Steps", id="training-steps", value="1000"
-                    )
-                    yield Select(
-                        [("SGD", "sgd"), ("Adam", "adam")],
-                        value="adam",
-                        id="optimizer-select",
-                    )
-                    yield Input(
-                        placeholder="Corpus Path", id="corpus-path", value="corpus/"
-                    )
-
-            with Horizontal():
-                yield Button("Start Training", id="start-training", variant="primary")
-                yield Button(
-                    "Stop Training", id="stop-training", variant="error", disabled=True
-                )
-                yield Button("Save Model", id="save-model", disabled=True)
-
-            yield Static("Training Progress", classes="section-title")
-            yield ProgressBar(total=100, id="training-progress")
-            yield Static(
-                "Step: 0 | Loss: 0.0000 | Perplexity: 0.0", id="training-stats"
-            )
-
-            yield Static("Training Log", classes="section-title")
-            yield Log(id="training-log")
-
-    @on(Button.Pressed, "#start-training")
-    def start_training(self) -> None:
-        """Start model training."""
-        if self.is_training:
-            return
-
-        try:
-            # Get configuration values
-            vocab_size = int(self.query_one("#vocab-size").value or "1000")
-            d_model = int(self.query_one("#d-model").value or "128")
-            num_heads = int(self.query_one("#num-heads").value or "8")
-            d_ff = int(self.query_one("#d-ff").value or "512")
-            num_layers = int(self.query_one("#num-layers").value or "6")
-            max_seq_len = int(self.query_one("#max-seq-len").value or "256")
-
-            learning_rate = float(self.query_one("#learning-rate").value or "0.001")
-            batch_size = int(self.query_one("#batch-size").value or "32")
-            training_steps = int(self.query_one("#training-steps").value or "1000")
-            optimizer_type = self.query_one("#optimizer-select").value
-            corpus_path = self.query_one("#corpus-path").value or "corpus/"
-
-            # Initialize training
-            self._initialize_training(
-                vocab_size,
-                d_model,
-                num_heads,
-                d_ff,
-                num_layers,
-                max_seq_len,
-                learning_rate,
-                batch_size,
-                training_steps,
-                optimizer_type,
-                corpus_path,
-            )
-
-            # Start training in background
-            self.is_training = True
-            self.query_one("#start-training").disabled = True
-            self.query_one("#stop-training").disabled = False
-
-            self.query_one("#training-log").write_line("🚀 Starting training...")
-
-            # Run training asynchronously
-            asyncio.create_task(self._run_training(training_steps))
-
-        except Exception as e:
-            self.query_one("#training-log").write_line(f"❌ Error: {str(e)}")
-
-    @on(Button.Pressed, "#stop-training")
-    def stop_training(self) -> None:
-        """Stop model training."""
-        self.is_training = False
-        self.query_one("#start-training").disabled = False
-        self.query_one("#stop-training").disabled = True
-        self.query_one("#save-model").disabled = False
-        self.query_one("#training-log").write_line("🛑 Training stopped")
-
-    @on(Button.Pressed, "#save-model")
-    def save_model_action(self) -> None:
-        """Save the trained model."""
-        if self.trainer is None:
-            self.query_one("#training-log").write_line("❌ No model to save")
-            return
-
-        try:
-            os.makedirs("models", exist_ok=True)
-            model_path = f"models/model_{len(os.listdir('models')) + 1}.pkl"
-            save_model(self.trainer.model, model_path)
-            self.query_one("#training-log").write_line(
-                f"💾 Model saved to {model_path}"
-            )
-        except Exception as e:
-            self.query_one("#training-log").write_line(f"❌ Save error: {str(e)}")
-
-    def _initialize_training(
-        self,
-        vocab_size,
-        d_model,
-        num_heads,
-        d_ff,
-        num_layers,
-        max_seq_len,
-        learning_rate,
-        batch_size,
-        training_steps,
-        optimizer_type,
-        corpus_path,
-    ):
-        """Initialize training components."""
-        # Create tokenizer and load corpus
-        tokenizer = CharTokenizer()
-        corpus_files = []
-
-        if os.path.exists(corpus_path):
-            for file in Path(corpus_path).rglob("*.txt"):
-                corpus_files.append(str(file))
-
-        if not corpus_files:
-            # Use sample text if no corpus files found
-            sample_texts = [
-                "The quick brown fox jumps over the lazy dog.",
-                "Machine learning is a subset of artificial intelligence.",
-                "Neural networks are inspired by the human brain.",
-            ]
-            tokenizer.build_vocab(sample_texts)
-
-            dataloader = DataLoader(
-                corpus_paths=None,
-                tokenizer=tokenizer,
-                seq_length=min(64, max_seq_len),
-                batch_size=batch_size,
-                sample_texts=sample_texts,
-            )
-        else:
-            # Load actual corpus files
-            corpus_texts = []
-            for file_path in corpus_files:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    corpus_texts.append(f.read())
-
-            tokenizer.build_vocab(corpus_texts)
-
-            dataloader = DataLoader(
-                corpus_paths=corpus_files,
-                tokenizer=tokenizer,
-                seq_length=min(64, max_seq_len),
-                batch_size=batch_size,
-            )
-
-        # Create model with actual vocabulary size
-        model = GPTModel(
-            vocab_size=tokenizer.vocab_size,
-            d_model=d_model,
-            num_heads=num_heads,
-            d_ff=d_ff,
-            num_layers=num_layers,
-            max_seq_len=max_seq_len,
-        )
-
-        # Create optimizer
-        if optimizer_type == "sgd":
-            optimizer = SGD(learning_rate=learning_rate)
-        else:
-            optimizer = Adam(learning_rate=learning_rate)
-
-        # Create trainer
-        self.trainer = Trainer(model, dataloader, optimizer)
-
-        self.query_one("#training-log").write_line(
-            f"✅ Model initialized with vocab_size={tokenizer.vocab_size}"
-        )
-
-    async def _run_training(self, training_steps):
-        """Run training loop with UI updates."""
-        if self.trainer is None:
-            return
-
-        progress_bar = self.query_one("#training-progress")
-        stats_display = self.query_one("#training-stats")
-        log_display = self.query_one("#training-log")
-
-        progress_bar.total = training_steps
-
-        for step in range(training_steps):
-            if not self.is_training:
-                break
-
-            try:
-                # Training step
-                loss = self.trainer.train_step()
-
-                # Update progress
-                progress_bar.advance(1)
-
-                # Update stats every 10 steps
-                if step % 10 == 0:
-                    perplexity = self.trainer.compute_perplexity(num_batches=5)
-                    stats_display.update(
-                        f"Step: {step} | Loss: {loss:.4f} | Perplexity: {perplexity:.2f}"
-                    )
-                    log_display.write_line(
-                        f"Step {step}: Loss={loss:.4f}, Perplexity={perplexity:.2f}"
-                    )
-
-                # Small delay to prevent UI blocking
-                await asyncio.sleep(0.01)
-
-            except Exception as e:
-                log_display.write_line(f"❌ Training error at step {step}: {str(e)}")
-                break
-
-        # Training completed
-        self.is_training = False
-        self.query_one("#start-training").disabled = False
-        self.query_one("#stop-training").disabled = True
-        self.query_one("#save-model").disabled = False
-        log_display.write_line("🎉 Training completed!")
 
 
 class GenerationPanel(Container):
@@ -637,70 +362,39 @@ class SettingsPanel(Container):
             yield Static("⚙️ Settings", classes="panel-title")
 
             with Vertical():
-                yield Label("Default Model Configuration:")
+                yield Label("Generation Defaults:")
                 yield Input(
-                    placeholder="Default Vocabulary Size",
-                    id="default-vocab-size",
-                    value="1000",
+                    placeholder="Default Max Generation Length",
+                    id="default-max-length",
+                    value="50",
                 )
                 yield Input(
-                    placeholder="Default Model Dimension",
-                    id="default-d-model",
-                    value="128",
+                    placeholder="Default Temperature",
+                    id="default-temperature",
+                    value="1.0",
                 )
                 yield Input(
-                    placeholder="Default Number of Heads",
-                    id="default-num-heads",
-                    value="8",
-                )
-                yield Input(
-                    placeholder="Default Feed Forward Dim",
-                    id="default-d-ff",
-                    value="512",
-                )
-                yield Input(
-                    placeholder="Default Number of Layers",
-                    id="default-num-layers",
-                    value="6",
-                )
-                yield Input(
-                    placeholder="Default Max Sequence Length",
-                    id="default-max-seq-len",
-                    value="256",
-                )
-
-                yield Label("Training Defaults:")
-                yield Input(
-                    placeholder="Default Learning Rate", id="default-lr", value="0.001"
-                )
-                yield Input(
-                    placeholder="Default Batch Size",
-                    id="default-batch-size",
-                    value="32",
-                )
-                yield Select(
-                    [("SGD", "sgd"), ("Adam", "adam")],
-                    value="adam",
-                    id="default-optimizer",
+                    placeholder="Default Context Length",
+                    id="default-context-length",
+                    value="20",
                 )
 
                 yield Label("Paths:")
                 yield Input(
-                    placeholder="Default Corpus Path",
-                    id="default-corpus-path",
-                    value="corpus/",
-                )
-                yield Input(
-                    placeholder="Default Models Path",
-                    id="default-models-path",
+                    placeholder="Models Directory",
+                    id="models-path",
                     value="models/",
                 )
 
+                yield Label("Interface Preferences:")
                 yield Checkbox(
-                    "Enable training progress sounds", id="enable-sounds", value=False
+                    "Auto-refresh model list", id="auto-refresh", value=True
                 )
                 yield Checkbox(
-                    "Auto-save models after training", id="auto-save", value=True
+                    "Show generation timestamps", id="show-timestamps", value=False
+                )
+                yield Checkbox(
+                    "Auto-scroll generation log", id="auto-scroll", value=True
                 )
 
                 with Horizontal():
@@ -715,7 +409,7 @@ class SettingsPanel(Container):
     @on(Button.Pressed, "#save-settings")
     def save_settings(self) -> None:
         """Save current settings."""
-        self.query_one("#settings-log").write_line("💾 Settings saved (placeholder)")
+        self.query_one("#settings-log").write_line("💾 Settings saved")
 
     @on(Button.Pressed, "#reset-settings")
     def reset_settings(self) -> None:
