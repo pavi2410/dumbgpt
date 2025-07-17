@@ -1,0 +1,204 @@
+/* DumbGPT TUI Styles */
+
+/* Welcome Screen */
+#welcome-container {
+    content-align: center middle;
+    padding: 2;
+}
+
+#welcome-text {
+    border: solid green;
+    padding: 1;
+    text-align: center;
+}
+
+/* Panel Titles */
+.panel-title {
+    text-style: bold;
+    color: cyan;
+    padding: 1 0;
+    border-bottom: solid white;
+    margin-bottom: 1;
+}
+
+.section-title {
+    text-style: bold;
+    color: yellow;
+    padding: 1 0 0 0;
+    margin-top: 1;
+}
+
+/* Training Panel */
+TrainingPanel {
+    padding: 1;
+}
+
+TrainingPanel Input {
+    margin: 0 1 1 0;
+}
+
+TrainingPanel Select {
+    margin: 0 1 1 0;
+}
+
+TrainingPanel Button {
+    margin: 0 1 0 0;
+}
+
+TrainingPanel ProgressBar {
+    margin: 1 0;
+}
+
+#training-stats {
+    text-style: bold;
+    color: green;
+    padding: 0 0 1 0;
+}
+
+#training-log {
+    height: 10;
+    border: solid white;
+    margin: 1 0;
+}
+
+/* Generation Panel */
+GenerationPanel {
+    padding: 1;
+}
+
+GenerationPanel Input {
+    margin: 0 1 1 0;
+}
+
+GenerationPanel Select {
+    margin: 0 1 1 0;
+}
+
+GenerationPanel Button {
+    margin: 0 1 0 0;
+}
+
+#generated-text {
+    height: 10;
+    border: solid cyan;
+    margin: 1 0;
+}
+
+#generation-log {
+    height: 8;
+    border: solid white;
+    margin: 1 0;
+}
+
+/* Models Panel */
+ModelsPanel {
+    padding: 1;
+}
+
+ModelsPanel Button {
+    margin: 0 1 1 0;
+}
+
+#models-table {
+    height: 12;
+    border: solid white;
+    margin: 1 0;
+}
+
+#model-details {
+    height: 8;
+    border: solid cyan;
+    margin: 1 0;
+}
+
+#management-log {
+    height: 6;
+    border: solid white;
+    margin: 1 0;
+}
+
+/* Settings Panel */
+SettingsPanel {
+    padding: 1;
+}
+
+SettingsPanel Label {
+    text-style: bold;
+    color: white;
+    padding: 1 0 0 0;
+}
+
+SettingsPanel Input {
+    margin: 0 1 1 0;
+}
+
+SettingsPanel Select {
+    margin: 0 1 1 0;
+}
+
+SettingsPanel Checkbox {
+    margin: 1 0;
+}
+
+SettingsPanel Button {
+    margin: 1 1 0 0;
+}
+
+#settings-log {
+    height: 8;
+    border: solid white;
+    margin: 1 0;
+}
+
+/* General Styles */
+Button {
+    min-width: 16;
+}
+
+Input {
+    width: 100%;
+}
+
+Select {
+    width: 100%;
+}
+
+Log {
+    scrollbar-gutter: stable;
+}
+
+DataTable {
+    scrollbar-gutter: stable;
+}
+
+TextArea {
+    scrollbar-gutter: stable;
+}
+
+/* Color scheme */
+Button.-primary {
+    background: blue;
+    color: white;
+}
+
+Button.-success {
+    background: green;
+    color: white;
+}
+
+Button.-error {
+    background: red;
+    color: white;
+}
+
+Button.-warning {
+    background: orange;
+    color: white;
+}
+
+/* Responsive layout */
+@media (max-width: 80) {
+    Horizontal {
+        layout: vertical;
+    }
+}
