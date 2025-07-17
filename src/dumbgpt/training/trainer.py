@@ -104,7 +104,7 @@ class Trainer:
             Dictionary of parameter gradients
         """
         # Compute loss gradients
-        loss_gradients = self._compute_gradients(model_output, targets)
+        # loss_gradients = self._compute_gradients(model_output, targets)
         
         # For this implementation, we'll use a simple approximation
         # In practice, this would involve proper backpropagation through the model

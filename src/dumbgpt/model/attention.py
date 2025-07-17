@@ -115,7 +115,7 @@ class MultiHeadAttention:
         
         # Transpose to (..., num_heads, seq_len, d_k)
         # From (..., seq_len, num_heads, d_k) to (..., num_heads, seq_len, d_k)
-        axes = list(range(len(batch_dims))) + [-2, -3, -1]
+        # axes = list(range(len(batch_dims))) + [-2, -3, -1]
         Q = np.moveaxis(Q, -2, -3)
         K = np.moveaxis(K, -2, -3)
         V = np.moveaxis(V, -2, -3)
