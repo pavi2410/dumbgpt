@@ -15,6 +15,15 @@ uv sync
 
 # Run the TUI application
 uv run main.py
+
+# Run tests
+uv run pytest
+
+# Run specific test file
+uv run pytest tests/test_tokenizer.py
+
+# Run tests with verbose output
+uv run pytest -v
 ```
 
 ### Project Structure
