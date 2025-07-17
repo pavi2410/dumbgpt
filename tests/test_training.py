@@ -1,7 +1,6 @@
 import pytest
 import numpy as np
 import os
-from pathlib import Path
 from dumbgpt.training.dataloader import DataLoader
 from dumbgpt.training.optimizer import SGD, Adam
 from dumbgpt.training.trainer import Trainer

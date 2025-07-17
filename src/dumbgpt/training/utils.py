@@ -1,6 +1,5 @@
 import os
 import pickle
-import numpy as np
 from ..model.transformer import GPTModel
 
 

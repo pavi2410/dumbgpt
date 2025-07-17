@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from ..model.layers import Softmax
 
 
