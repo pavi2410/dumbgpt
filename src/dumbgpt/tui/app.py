@@ -1,8 +1,10 @@
 """
 DumbGPT TUI Application
 
-A rich terminal interface for training and interacting with GPT models.
+A rich terminal interface for interacting with trained GPT models.
 Built with Textual for an interactive learning experience.
+
+Note: For training models, use the separate train_model.py script.
 """
 
 import os
