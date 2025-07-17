@@ -122,6 +122,9 @@ class Adam:
             self.m[param_name] = np.zeros_like(param)
             self.v[param_name] = np.zeros_like(param)
 
+        # Increment time step
+        self.t += 1
+
         # Update biased first moment estimate
         self.m[param_name] = self.beta1 * self.m[param_name] + (1 - self.beta1) * grad
 
@@ -131,10 +134,11 @@ class Adam:
         )
 
         # Compute bias-corrected first moment estimate
-        m_hat = self.m[param_name] / (1 - self.beta1**self.t)
-
-        # Compute bias-corrected second moment estimate
-        v_hat = self.v[param_name] / (1 - self.beta2**self.t)
+        bias_correction1 = 1 - self.beta1**self.t
+        bias_correction2 = 1 - self.beta2**self.t
+        
+        m_hat = self.m[param_name] / bias_correction1
+        v_hat = self.v[param_name] / bias_correction2
 
         # Update parameter
         updated_param = param - self.learning_rate * m_hat / (
