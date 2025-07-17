@@ -79,3 +79,35 @@ The project includes a curated corpus:
 
 - `main.py`: Direct script execution with `uv run main.py`
 - Main function: `src.dumbgpt.tui.app:main`
+
+## Curriculum
+
+Chapter 1: Tokenization 🔤
+- Build a tokenizer to convert text into numbers
+- Understand vocabulary, encoding/decoding
+- Handle the corpus data (novels + code)
+
+Chapter 2: Basic Neural Network Components 🧠
+- Implement linear layers, activation functions
+- Build the foundation with NumPy
+- Create the building blocks for transformers
+
+Chapter 3: Attention Mechanism 👁️
+- Self-attention from scratch
+- Multi-head attention
+- The core innovation of transformers
+
+Chapter 4: Transformer Architecture 🏗️
+- Combine attention with feed-forward networks
+- Layer normalization, residual connections
+- Build the complete GPT block
+
+Chapter 5: Training Loop 🔄
+- Loss functions, backpropagation
+- Data loading and batching
+- Model optimization
+
+Chapter 6: TUI Interface 💻
+- Build the terminal interface
+- Training progress, model interaction
+- Put it all together
