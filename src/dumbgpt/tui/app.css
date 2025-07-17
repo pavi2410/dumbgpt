@@ -196,9 +196,4 @@ Button.-warning {
     color: white;
 }
 
-/* Responsive layout */
-@media (max-width: 80) {
-    Horizontal {
-        layout: vertical;
-    }
-}
+/* Responsive layout - removed media query as it's not supported in Textual CSS */
