@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import os
 from pathlib import Path
 from dumbgpt.training.dataloader import DataLoader
 from dumbgpt.training.optimizer import SGD, Adam
@@ -411,6 +412,10 @@ class TestModelPersistence:
             assert True  # If we get here, save didn't crash
         except Exception as e:
             pytest.fail(f"Model saving failed: {e}")
+        finally:
+            # Clean up
+            if os.path.exists("test_model.pkl"):
+                os.remove("test_model.pkl")
     
     def test_load_model(self):
         """Test model loading functionality."""
@@ -424,14 +429,19 @@ class TestModelPersistence:
         )
         
         # Save and load model
-        save_model(model, "test_model.pkl")
-        loaded_model = load_model("test_model.pkl")
-        
-        assert loaded_model is not None
-        assert loaded_model.vocab_size == model.vocab_size
-        assert loaded_model.d_model == model.d_model
-        assert loaded_model.num_heads == model.num_heads
-        assert loaded_model.num_layers == model.num_layers
+        try:
+            save_model(model, "test_model.pkl")
+            loaded_model = load_model("test_model.pkl")
+            
+            assert loaded_model is not None
+            assert loaded_model.vocab_size == model.vocab_size
+            assert loaded_model.d_model == model.d_model
+            assert loaded_model.num_heads == model.num_heads
+            assert loaded_model.num_layers == model.num_layers
+        finally:
+            # Clean up
+            if os.path.exists("test_model.pkl"):
+                os.remove("test_model.pkl")
     
     def test_model_persistence_consistency(self):
         """Test that saved and loaded models produce same output."""
@@ -451,14 +461,19 @@ class TestModelPersistence:
         original_output = model.forward(input_ids)
         
         # Save and load model
-        save_model(model, "test_model.pkl")
-        loaded_model = load_model("test_model.pkl")
-        
-        # Get output from loaded model
-        loaded_output = loaded_model.forward(input_ids)
-        
-        # Outputs should be identical
-        np.testing.assert_array_almost_equal(original_output, loaded_output)
+        try:
+            save_model(model, "test_model.pkl")
+            loaded_model = load_model("test_model.pkl")
+            
+            # Get output from loaded model
+            loaded_output = loaded_model.forward(input_ids)
+            
+            # Outputs should be identical
+            np.testing.assert_array_almost_equal(original_output, loaded_output)
+        finally:
+            # Clean up
+            if os.path.exists("test_model.pkl"):
+                os.remove("test_model.pkl")
 
 
 class TestTrainingPipeline:
