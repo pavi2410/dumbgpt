@@ -576,7 +576,7 @@ class ModelsPanel(Container):
     @on(DataTable.RowSelected)
     def show_model_details(self, event: DataTable.RowSelected) -> None:
         """Show details of selected model."""
-        model_name = event.data_table.get_row_at(event.row_index)[0]
+        model_name = event.data_table.get_row_at(event.cursor_row)[0]
         model_path = Path("models") / model_name
 
         if not model_path.exists():

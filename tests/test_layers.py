@@ -23,7 +23,7 @@ class TestLinear:
         # Weight should be (in_features, out_features)
         assert layer.weight.shape == (in_features, out_features)
         # Bias should be (out_features,)
-        assert layer.bias.shape == (out_features,)
+        assert layer.bias is not None and layer.bias.shape == (out_features,)
 
     def test_linear_forward_single_input(self):
         """Test forward pass with single input vector."""
@@ -297,7 +297,7 @@ class TestEmbedding:
         embedding = Embedding(vocab_size=10, embed_dim=5)
         token_id = 3
 
-        output = embedding.forward(token_id)
+        output = embedding.forward(np.array(token_id))
 
         assert output.shape == (5,)
         # Should return the 3rd row of weight matrix
@@ -337,7 +337,7 @@ class TestEmbedding:
 
         # Should raise error for out-of-bounds access
         with pytest.raises(IndexError):
-            embedding.forward(15)  # 15 >= vocab_size
+            embedding.forward(np.array(15))  # 15 >= vocab_size
 
     def test_embedding_weight_initialization(self):
         """Test Embedding weight initialization."""

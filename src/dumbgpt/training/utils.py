@@ -1,5 +1,7 @@
 import os
 import pickle
+import numpy as np
+from typing import Dict
 from ..model.transformer import GPTModel
 
 
@@ -66,7 +68,7 @@ def load_model(filepath: str) -> GPTModel:
     return model
 
 
-def _get_model_parameters(model: GPTModel) -> dict:
+def _get_model_parameters(model: GPTModel) -> Dict[str, np.ndarray]:
     """
     Get all model parameters as a dictionary.
 
@@ -127,12 +129,15 @@ def _get_model_parameters(model: GPTModel) -> dict:
 
     # Output layer
     parameters["lm_head.weight"] = model.lm_head.weight.copy()
-    parameters["lm_head.bias"] = model.lm_head.bias.copy()
+    if model.lm_head.bias is not None:
+        parameters["lm_head.bias"] = model.lm_head.bias.copy()
+    else:
+        parameters["lm_head.bias"] = np.zeros(model.lm_head.out_features)
 
     return parameters
 
 
-def _set_model_parameters(model: GPTModel, parameters: dict):
+def _set_model_parameters(model: GPTModel, parameters: Dict[str, np.ndarray]):
     """
     Set model parameters from dictionary.
 
@@ -189,4 +194,7 @@ def _set_model_parameters(model: GPTModel, parameters: dict):
 
     # Output layer
     model.lm_head.weight = parameters["lm_head.weight"].copy()
-    model.lm_head.bias = parameters["lm_head.bias"].copy()
+    if "lm_head.bias" in parameters:
+        model.lm_head.bias = parameters["lm_head.bias"].copy()
+    else:
+        model.lm_head.bias = None
