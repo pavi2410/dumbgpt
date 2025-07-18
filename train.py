@@ -2,7 +2,7 @@
 """
 DumbGPT PyTorch Training Script
 
-Simplified training script using PyTorch for M2 optimization.
+Trains GPT model with TikToken BPE tokenizer.
 """
 
 import sys
@@ -16,23 +16,41 @@ import time
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from dumbgpt.model.transformer import GPTModel
-from dumbgpt.tokenizer.tokenizer import CharTokenizer
+from dumbgpt.tokenizer.tiktoken_tokenizer import TikTokenTokenizer
 
 
-def load_sample_data() -> List[str]:
-    """Load sample training data."""
-    return [
-        "Hello world! This is a sample text for training our GPT model.",
-        "The quick brown fox jumps over the lazy dog.",
-        "Machine learning is fascinating and powerful.",
-        "Natural language processing helps computers understand text.",
-        "Deep learning models can generate human-like text.",
-        "Transformers revolutionized the field of AI.",
-        "GPT models use attention mechanisms to process sequences.",
-        "Training neural networks requires careful optimization.",
-        "Python is a great language for machine learning.",
-        "PyTorch provides excellent GPU acceleration."
-    ]
+def load_corpus_data() -> List[str]:
+    """Load training data from corpus directory."""
+    corpus_dir = Path("corpus")
+    texts = []
+    
+    # Load novels
+    novels_dir = corpus_dir / "novels"
+    if novels_dir.exists():
+        for novel_file in novels_dir.glob("*.txt"):
+            try:
+                with open(novel_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        texts.append(content)
+                        print(f"Loaded {novel_file.name}: {len(content)} characters")
+            except Exception as e:
+                print(f"Error loading {novel_file.name}: {e}")
+    
+    # Load code samples
+    code_dir = corpus_dir / "code"
+    if code_dir.exists():
+        for code_file in code_dir.glob("*"):
+            try:
+                with open(code_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        texts.append(content)
+                        print(f"Loaded {code_file.name}: {len(content)} characters")
+            except Exception as e:
+                print(f"Error loading {code_file.name}: {e}")
+    
+    return texts
 
 
 def create_dataset(texts: List[str], tokenizer, seq_len: int):
@@ -47,7 +65,7 @@ def create_dataset(texts: List[str], tokenizer, seq_len: int):
     inputs = []
     targets = []
     
-    for i in range(0, len(all_tokens) - seq_len, seq_len // 2):  # Overlapping sequences
+    for i in range(0, len(all_tokens) - seq_len, seq_len // 4):  # More overlap
         if i + seq_len + 1 < len(all_tokens):
             input_seq = all_tokens[i:i + seq_len]
             target_seq = all_tokens[i + 1:i + seq_len + 1]
@@ -80,7 +98,7 @@ def train_step(model, inputs, targets, optimizer, device):
 
 def main():
     """Main training function."""
-    print("🧠 DumbGPT PyTorch Training")
+    print("🧠 DumbGPT TikToken Training")
     print("=" * 50)
     
     # Check if MPS is available
@@ -96,19 +114,22 @@ def main():
     
     print(f"PyTorch version: {torch.__version__}")
     
-    # Load data
-    print("\n📚 Loading training data...")
-    texts = load_sample_data()
-    print(f"Loaded {len(texts)} text samples")
+    # Load data from corpus
+    print("\n📚 Loading corpus data...")
+    texts = load_corpus_data()
+    print(f"Loaded {len(texts)} files from corpus")
     
-    # Build tokenizer
-    print("\n🔤 Building tokenizer...")
-    tokenizer = CharTokenizer()
-    tokenizer.build_vocab(texts)
+    if not texts:
+        print("❌ No corpus data found! Make sure corpus/ directory exists.")
+        return
+    
+    # Setup tokenizer
+    print("\n🔤 Setting up TikToken tokenizer...")
+    tokenizer = TikTokenTokenizer()
     vocab_size = tokenizer.vocab_size
-    print(f"Vocabulary size: {vocab_size}")
+    print(f"Vocabulary size: {vocab_size:,}")
     
-    # Model configuration - 1M+ parameters!
+    # Model configuration
     config = {
         "vocab_size": vocab_size,
         "d_model": 256,         # Larger embedding
@@ -118,9 +139,9 @@ def main():
         "max_seq_len": 128      # Longer sequences
     }
     
-    print("\n🏗️ Creating model...")
+    print("\n🏗️ Model configuration:")
     for key, value in config.items():
-        print(f"  {key}: {value}")
+        print(f"  {key}: {value:,}")
     
     # Create model
     model = GPTModel(
@@ -136,18 +157,29 @@ def main():
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params:,}")
     
-    # Create dataset
+    # Create dataset with smaller sequence length for more sequences
     print("\n📊 Preparing dataset...")
-    inputs, targets = create_dataset(texts, tokenizer, config["max_seq_len"] // 2)
+    seq_len = 64  # Good balance for large dataset
+    inputs, targets = create_dataset(texts, tokenizer, seq_len)
     print(f"Created {len(inputs)} training sequences")
+    
+    # Limit dataset size for faster training
+    if len(inputs) > 1000:
+        inputs = inputs[:1000]
+        targets = targets[:1000]
+        print(f"Limited to {len(inputs)} sequences for faster training")
+    
+    if len(inputs) == 0:
+        print("❌ No training sequences created! Data too small.")
+        return
     
     # Create optimizer
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     # Training
     print("\n🚀 Starting training...")
-    num_epochs = 10
-    batch_size = 4
+    num_epochs = 5  # Fewer epochs for large dataset
+    batch_size = 8  # Larger batch size
     
     start_time = time.time()
     
@@ -193,11 +225,12 @@ def main():
     torch.save({
         'model_state_dict': model.state_dict(),
         'config': config,
-        'tokenizer_vocab': tokenizer.vocab
+        'tokenizer_type': 'tiktoken'
     }, model_path)
     print(f"Model saved to: {model_path}")
     
-    print(f"\n🎉 Training completed in {time.time() - start_time:.1f}s!")
+    training_time = time.time() - start_time
+    print(f"\n🎉 Training completed in {training_time:.1f}s!")
 
 
 if __name__ == "__main__":

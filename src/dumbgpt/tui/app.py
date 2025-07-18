@@ -12,35 +12,15 @@ from textual.binding import Binding
 from textual import on
 
 from ..model.transformer import GPTModel
-from ..tokenizer.tokenizer import CharTokenizer
+from ..tokenizer.tiktoken_tokenizer import TikTokenTokenizer
 
 
 def load_model():
-    """Load the DumbGPT model."""
-    model_path = Path("models/pytorch_model.pt")
-    if not model_path.exists():
-        return None, None
-    
-    checkpoint = torch.load(model_path, map_location='cpu')
-    config = checkpoint['config']
-    
-    model = GPTModel(
-        vocab_size=config['vocab_size'],
-        d_model=config['d_model'],
-        num_heads=config['num_heads'],
-        d_ff=config['d_ff'],
-        num_layers=config['num_layers'],
-        max_seq_len=config['max_seq_len']
-    )
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
-    
-    tokenizer = CharTokenizer()
-    tokenizer.vocab = checkpoint['tokenizer_vocab']
-    tokenizer.reverse_vocab = {v: k for k, v in checkpoint['tokenizer_vocab'].items()}
-    tokenizer.vocab_size = len(checkpoint['tokenizer_vocab'])
-    
-    return model, tokenizer
+    """Load tiktoken tokenizer for demo."""
+    # For now, just return tokenizer without model
+    # The saved model has different vocab size than tiktoken
+    tokenizer = TikTokenTokenizer()
+    return None, tokenizer
 
 
 class DumbGPTApp(App):
@@ -69,13 +49,11 @@ class DumbGPTApp(App):
         # Load model
         self.model, self.tokenizer = load_model()
         
-        if self.model and self.tokenizer:
-            params = sum(p.numel() for p in self.model.parameters())
-            chat.write(f"Model loaded! {params:,} parameters\n")
-            chat.write("Type a message to start chatting.\n")
+        if self.tokenizer:
+            chat.write(f"TikToken tokenizer loaded! Vocab size: {self.tokenizer.vocab_size:,}\n")
+            chat.write("Type a message to test tokenization (no model inference yet).\n")
         else:
-            chat.write("Error: Could not load model!\n")
-            chat.write("Make sure models/pytorch_model.pt exists.\n")
+            chat.write("Error: Could not load tokenizer!\n")
     
     @on(Input.Submitted)
     def send_message(self, event: Input.Submitted):
@@ -91,27 +69,19 @@ class DumbGPTApp(App):
         # Clear input
         event.input.value = ""
         
-        # Generate model response
-        if self.model and self.tokenizer:
+        # Show tokenization demo
+        if self.tokenizer:
             try:
                 # Tokenize input
                 tokens = self.tokenizer.encode(message)
-                context = torch.tensor(tokens).unsqueeze(0)
+                decoded = self.tokenizer.decode(tokens)
                 
-                # Generate response
-                with torch.no_grad():
-                    generated = self.model.generate(
-                        context, 
-                        max_length=50, 
-                        temperature=0.8
-                    )
-                    response = self.tokenizer.decode(generated.tolist())
-                
-                chat.write(f"DumbGPT: {response}\n")
+                chat.write(f"Tokens ({len(tokens)}): {tokens[:10]}{'...' if len(tokens) > 10 else ''}\n")
+                chat.write(f"Decoded: {decoded}\n")
             except Exception as e:
-                chat.write(f"Error generating response: {str(e)}\n")
+                chat.write(f"Error tokenizing: {str(e)}\n")
         else:
-            chat.write("Error: Model not loaded\n")
+            chat.write("Error: Tokenizer not loaded\n")
     
     def action_clear(self):
         """Clear chat."""
