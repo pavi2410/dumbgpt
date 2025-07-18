@@ -38,17 +38,17 @@ def load_corpus_data() -> List[str]:
                 print(f"Error loading {novel_file.name}: {e}")
     
     # Load code samples
-    code_dir = corpus_dir / "code"
-    if code_dir.exists():
-        for code_file in code_dir.glob("*"):
-            try:
-                with open(code_file, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-                    if content:
-                        texts.append(content)
-                        print(f"Loaded {code_file.name}: {len(content)} characters")
-            except Exception as e:
-                print(f"Error loading {code_file.name}: {e}")
+    # code_dir = corpus_dir / "code"
+    # if code_dir.exists():
+    #     for code_file in code_dir.glob("*"):
+    #         try:
+    #             with open(code_file, 'r', encoding='utf-8') as f:
+    #                 content = f.read().strip()
+    #                 if content:
+    #                     texts.append(content)
+    #                     print(f"Loaded {code_file.name}: {len(content)} characters")
+    #         except Exception as e:
+    #             print(f"Error loading {code_file.name}: {e}")
     
     return texts
 
