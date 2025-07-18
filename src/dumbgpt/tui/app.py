@@ -7,7 +7,6 @@ Built with Textual for an interactive learning experience.
 Note: For training models, use the separate train_model.py script.
 """
 
-import os
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -31,9 +30,27 @@ from textual.screen import Screen
 from textual.binding import Binding
 from textual import on
 
+import torch
 from ..model.transformer import GPTModel
 from ..tokenizer.tokenizer import CharTokenizer
-from ..training.utils import save_model, load_model
+
+
+def load_pytorch_model(model_path):
+    """Load a PyTorch model from file."""
+    checkpoint = torch.load(model_path, map_location='cpu')
+    config = checkpoint['config']
+    
+    model = GPTModel(
+        vocab_size=config['vocab_size'],
+        d_model=config['d_model'],
+        num_heads=config['num_heads'],
+        d_ff=config['d_ff'],
+        num_layers=config['num_layers'],
+        max_seq_len=config['max_seq_len']
+    )
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+    return model
 
 
 class WelcomeScreen(Screen):
@@ -168,7 +185,7 @@ class GenerationPanel(Container):
 
         try:
             model_path = model_select.value
-            self.current_model = load_model(model_path)
+            self.current_model = load_pytorch_model(model_path)
             self.query_one("#generation-log").write_line(
                 f"✅ Model loaded from {model_path}"
             )
@@ -315,7 +332,7 @@ class ModelsPanel(Container):
             size_mb = stat.st_size / (1024 * 1024)
 
             # Load model to get configuration
-            model = load_model(str(model_path))
+            model = load_pytorch_model(str(model_path))
 
             details = f"""Model: {model_name}
 Size: {size_mb:.2f} MB
