@@ -18,10 +18,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 
-# Add src to Python path for imports
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from dumbgpt.model.transformer import GPTModel
+from .model.transformer import GPTModel
 
 
 # ---------------------------------------------------------------------------

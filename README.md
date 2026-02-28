@@ -4,20 +4,22 @@ A high-performance GPT implementation using PyTorch for educational purposes. Tr
 
 ## ✨ Features
 
-- 🚀 **PyTorch Built-ins**: Uses `nn.TransformerDecoderLayer` for maximum performance
-- 🎯 **Apple Silicon Optimized**: M2 GPU acceleration with MPS backend
-- 📈 **Scalable**: Train models from 15K to 4.7M+ parameters
-- 💻 **Rich Terminal Interface**: Interactive TUI for model management and text generation
-- 🔤 **Custom Tokenization**: Character-level tokenizer for any text corpus
-- ⚡ **Fast Training**: Train 4.7M parameter models in ~6 seconds
+- 🚀 **Custom PyTorch Transformer**: Multi-head attention from scratch
+- 🎯 **Multi-Backend Support**: MPS (Apple), CUDA (NVIDIA), XPU (Intel)
+- 📈 **Scalable Presets**: nano (15K) → medium (2.6M) parameters
+- 💻 **Rich Terminal Interface**: Interactive TUI with Textual
+- 🔤 **TikToken (GPT-2)**: BPE tokenization, 50K+ vocab
+- ⚡ **Fast Training**: Mixed precision, gradient clipping, streaming data
 
 ## 🏗️ Architecture
 
-**Modern PyTorch Implementation:**
-- Token Embedding + Positional Encoding
-- PyTorch `TransformerDecoder` layers (built-in optimized)
-- Layer Normalization + Linear projection head
-- Cross-entropy loss + Adam optimizer
+**Custom PyTorch Implementation:**
+- Token Embedding + Learned Positional Embeddings
+- Multi-Head Self-Attention (causal masked)
+- Feed-forward layers with GELU activation
+- Layer Normalization + Residual connections
+- Weight tying (input/output embeddings)
+- Cross-entropy loss + AdamW optimizer with cosine LR schedule
 
 **Performance on M2 MacBook Air:**
 - **47,092 tokens/sec** throughput
@@ -36,36 +38,38 @@ uv sync
 
 ### Train a Model
 ```bash
-# Train a 4.7M parameter model (fast!)
-uv run python train_pytorch.py
+# Train with preset (nano/small/medium)
+uv run train --preset small --epochs 5
+
+# Train with custom settings
+uv run train --preset medium --batch 32 --lr 3e-4
 ```
 
 ### Interactive TUI
 ```bash
 # Launch terminal interface
-uv run main.py
+uv run tui
+```
+
+### Evaluate a Model
+```bash
+# Run evaluation on test prompts
+uv run eval
 ```
 
 ## 📊 Model Configurations
 
-**Small Model (15K params):**
-```python
-config = {
-    "d_model": 32,
-    "num_heads": 2, 
-    "d_ff": 64,
-    "num_layers": 1
-}
-```
+**Presets:**
 
-**Large Model (4.7M params):**
-```python
-config = {
-    "d_model": 256,
-    "num_heads": 8,
-    "d_ff": 512, 
-    "num_layers": 6
-}
+| Preset | Parameters | d_model | heads | layers | seq_len |
+|--------|-----------|---------|-------|--------|---------|
+| nano   | ~200K     | 128     | 4     | 3      | 128     |
+| small  | ~500K     | 256     | 4     | 4      | 128     |
+| medium | ~2.6M     | 384     | 6     | 6      | 256     |
+
+```bash
+# Use a preset
+uv run train --preset small --epochs 5 --batch 32
 ```
 
 ## 🧪 Testing
@@ -88,50 +92,59 @@ uv run pytest -v
 
 ```
 src/dumbgpt/
+├── __init__.py
 ├── model/
-│   └── transformer.py     # PyTorch GPT model
-├── tokenizer/
-│   └── tokenizer.py       # Character tokenizer  
-└── tui/                   # Terminal interface
-    ├── app.py
-    └── app.css
+│   ├── __init__.py         # exports GPTModel
+│   └── transformer.py      # GPT implementation
+├── tui/
+│   ├── __init__.py
+│   ├── app.py              # Textual TUI
+│   └── README.md
+├── train.py                # Training script
+└── eval.py                 # Evaluation script
 
-train_pytorch.py          # Training script
-main.py                   # TUI entry point
+corpus/                     # Training data
+├── novels/                 # Literary texts
+├── code/                   # Code samples
+└── node_modules/           # JS/TS code
+
+models/                     # Saved checkpoints
 ```
 
 ## 🎓 Educational Journey
 
 This project demonstrates the evolution from educational NumPy code to production-ready PyTorch:
 
-1. **Custom Implementation** → **PyTorch Built-ins**
-2. **CPU-only NumPy** → **GPU-accelerated PyTorch** 
+1. **Custom NumPy** → **Custom PyTorch**
+2. **CPU-only** → **GPU-accelerated (MPS/CUDA/XPU)**
 3. **Manual Gradients** → **Automatic Differentiation**
-4. **Custom Optimizers** → **Built-in Adam/SGD**
-5. **Slow Training** → **Real-time Performance**
+4. **Custom Optimizers** → **AdamW with Cosine LR**
+5. **Character Tokenizer** → **BPE (tiktoken)**
 
 ## 🔧 Requirements
 
 - Python 3.13+
-- PyTorch 2.7+ (with MPS support)
-- Apple Silicon Mac (for optimal performance)
+- PyTorch 2.8+ (with MPS, CUDA, or XPU support)
+- MPS: Apple Silicon Mac
+- CUDA: NVIDIA GPU (Linux/Windows)
+- XPU: Intel Arc GPU (Windows/Linux)
 - 8GB+ RAM recommended for large models
 
 ## 🎯 Next Steps
 
 - [ ] Implement Flash Attention for longer sequences
-- [ ] Add CUDA support for NVIDIA GPUs  
-- [ ] Integrate with Hugging Face transformers
-- [ ] Support for different tokenization schemes
-- [ ] Model quantization for mobile deployment
+- [ ] Add beam search and sampling strategies
+- [ ] Integrate with Hugging Face for model sharing
+- [ ] Add fine-tuning capability
+- [ ] Model quantization for deployment
 
 ## 📚 Learning Resources
 
 Perfect for understanding:
 - Transformer architecture fundamentals
 - PyTorch best practices and optimization
-- Apple Silicon ML acceleration
-- Character-level language modeling
+- Apple Silicon / Intel Arc / NVIDIA GPU acceleration
+- BPE tokenization with tiktoken
 - Terminal-based ML interfaces
 
 Built with ❤️ for learning and experimentation!

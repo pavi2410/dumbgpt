@@ -3,14 +3,11 @@
 Console Model Evaluation - Test TikToken GPT model
 """
 
-import sys
 from pathlib import Path
 import tiktoken
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from dumbgpt.model.transformer import GPTModel
+from .model.transformer import GPTModel
 
 
 def load_model(model_path: str = "models/best_model.pt"):

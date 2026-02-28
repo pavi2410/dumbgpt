@@ -14,7 +14,13 @@ DumbGPT is a GPT implementation from scratch for learning purposes. The project 
 uv sync
 
 # Run the TUI application
-uv run main.py
+uv run tui
+
+# Train a model
+uv run train --preset small --epochs 5
+
+# Evaluate a model
+uv run eval
 
 # Run tests
 uv run pytest
@@ -30,9 +36,14 @@ uv run pytest -v
 ```
 src/dumbgpt/
 ├── model/       # GPT transformer implementation
-├── tokenizer/   # Text tokenization logic
-├── training/    # Model training infrastructure
-└── tui/         # Terminal user interface
+│   ├── __init__.py
+│   └── transformer.py
+├── tui/         # Terminal user interface
+│   ├── __init__.py
+│   ├── app.py
+│   └── README.md
+├── train.py     # Training script
+└── eval.py      # Evaluation script
 
 corpus/          # Training data (novels + code samples)
 models/          # Saved trained models
@@ -47,16 +58,15 @@ models/          # Saved trained models
 - Attention mechanisms and layer implementations
 - Model serialization/deserialization for saving to `models/`
 
-**Tokenizer Module** (`src/dumbgpt/tokenizer/`):
-- Text preprocessing and tokenization
-- Integration with tiktoken for GPT-style tokenization
-- Handles both literary text and code samples from `corpus/`
-
-**Training Module** (`src/dumbgpt/training/`):
-- Training loop implementation
-- Dataset loading from `corpus/novels/` and `corpus/code/`
+**Training** (`src/dumbgpt/train.py`):
+- Training loop implementation with streaming dataset
+- Command-line interface with presets (nano/small/medium)
 - Progress tracking and metrics
 - Model checkpointing to `models/`
+
+**Evaluation** (`src/dumbgpt/eval.py`):
+- Batch prompt evaluation script
+- Test model on sample prompts
 
 **TUI Module** (`src/dumbgpt/tui/`):
 - Terminal interface using Textual
@@ -86,8 +96,9 @@ The project includes a curated corpus:
 
 ## Entry Points
 
-- `main.py`: Direct script execution with `uv run main.py`
-- Main function: `src.dumbgpt.tui.app:main`
+- `uv run tui`: Run the terminal UI
+- `uv run train`: Train the model (use `--help` for options)
+- `uv run eval`: Evaluate the model
 
 ## Curriculum
 
