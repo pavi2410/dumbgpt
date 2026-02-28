@@ -1,9 +1,7 @@
 """
-DumbGPT TUI – Chat + Training launcher
+DumbGPT TUI – Chat interface
 """
 
-import subprocess
-import sys
 from pathlib import Path
 
 import torch
@@ -12,8 +10,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import (
-    Button, Footer, Header, Input, Label, Log,
-    Select, TabbedContent, TabPane,
+    Button, Footer, Header, Input, Label, Log, Select,
 )
 
 from ..model.transformer import GPTModel
@@ -24,12 +21,6 @@ from ..tokenizer.tiktoken_tokenizer import TikTokenTokenizer
 # Helpers
 # ---------------------------------------------------------------------------
 MODELS_DIR = Path("models")
-
-PRESETS = {
-    "nano":   dict(d_model=128, num_heads=4, d_ff=256,  num_layers=3, max_seq_len=128),
-    "small":  dict(d_model=256, num_heads=4, d_ff=512,  num_layers=4, max_seq_len=128),
-    "medium": dict(d_model=384, num_heads=6, d_ff=768,  num_layers=6, max_seq_len=256),
-}
 
 
 def list_saved_models() -> list[tuple[str, str]]:
@@ -97,7 +88,7 @@ class ChatTab(Vertical):
             yield Select(options, prompt="Select a model…", id="model-select")
             yield Button("Reload", id="reload-btn", variant="default")
 
-        yield Log(id="chat-log", highlight=True, markup=True)
+        yield Log(id="chat-log", highlight=True)
 
         with Horizontal(id="params-bar"):
             yield Input(value="0.8",  placeholder="temperature", id="temp-input")
@@ -126,7 +117,7 @@ class ChatTab(Vertical):
             return
         log = self.query_one("#chat-log", Log)
         status = self.query_one("#status-label", Label)
-        log.write_line(f"[bold]Loading {Path(path).name}…[/bold]")
+        log.write_line(f"Loading {Path(path).name}…")
         status.update("Loading…")
         self._load_model_async(path)
 
@@ -140,15 +131,15 @@ class ChatTab(Vertical):
             self.app.model = model
             self.app.tokenizer = tok
             self.app.device = device
-            info = (f"[green]Loaded[/green] {Path(path).name}  |  "
+            info = (f"Loaded {Path(path).name}  |  "
                     f"{params:,} params  |  device={device}  |  "
                     f"d_model={cfg['d_model']}  layers={cfg['num_layers']}  "
                     f"seq={cfg['max_seq_len']}")
-            self.call_from_thread(log.write_line, info)
-            self.call_from_thread(status.update, f"Model: {Path(path).name} ({params:,} params)")
+            self.app.call_from_thread(log.write_line, info)
+            self.app.call_from_thread(status.update, f"Model: {Path(path).name} ({params:,} params)")
         except Exception as exc:
-            self.call_from_thread(log.write_line, f"[red]Error loading model: {exc}[/red]")
-            self.call_from_thread(status.update, "Load failed.")
+            self.app.call_from_thread(log.write_line, f"Error loading model: {exc}")
+            self.app.call_from_thread(status.update, "Load failed.")
 
     # ---- generation ----
 
@@ -160,7 +151,7 @@ class ChatTab(Vertical):
             return
         if not self.app.model:
             self.query_one("#chat-log", Log).write_line(
-                "[yellow]No model loaded. Select one above.[/yellow]")
+                "No model loaded. Select one above.")
             return
 
         self.query_one("#prompt-input", Input).value = ""
@@ -173,8 +164,8 @@ class ChatTab(Vertical):
             temperature, top_k, max_new = 0.8, 50, 100
 
         log = self.query_one("#chat-log", Log)
-        log.write_line(f"[bold cyan]You:[/bold cyan] {prompt}")
-        log.write_line("[dim]Generating…[/dim]")
+        log.write_line(f"You: {prompt}")
+        log.write_line("Generating…")
         self._generate_async(prompt, temperature, top_k, max_new)
 
     @work(thread=True)
@@ -187,110 +178,11 @@ class ChatTab(Vertical):
             input_ids = tok.encode(prompt)
             ctx = torch.tensor([input_ids], dtype=torch.long)
             out = model.generate(ctx, max_new_tokens=max_new, temperature=temperature, top_k=top_k)
-            # Only the newly generated tokens
             new_tokens = out[0, len(input_ids):].tolist()
             generated_text = tok.decode(new_tokens)
-            self.call_from_thread(
-                log.write_line,
-                f"[bold green]Model:[/bold green] {generated_text}"
-            )
+            self.app.call_from_thread(log.write_line, f"Model: {generated_text}")
         except Exception as exc:
-            self.call_from_thread(log.write_line, f"[red]Generation error: {exc}[/red]")
-
-
-# ---------------------------------------------------------------------------
-# Train tab
-# ---------------------------------------------------------------------------
-class TrainTab(Vertical):
-    DEFAULT_CSS = """
-    TrainTab { height: 1fr; padding: 1 2; }
-    #train-options { height: auto; margin-bottom: 1; }
-    #preset-select { width: 20; }
-    #epochs-input  { width: 12; }
-    #batch-input   { width: 12; }
-    #steps-input   { width: 12; }
-    #lr-input      { width: 16; }
-    #train-btn     { width: 16; margin-top: 1; }
-    #stop-btn      { width: 16; margin-top: 1; }
-    #train-log     { height: 1fr; border: solid $accent; }
-    """
-
-    _proc = None
-
-    def compose(self) -> ComposeResult:
-        yield Label("[b]Training Configuration[/b]", markup=True)
-        with Horizontal(id="train-options"):
-            yield Select(
-                [(k, k) for k in PRESETS],
-                value="small",
-                prompt="Preset…",
-                id="preset-select",
-            )
-            yield Input(value="5",    placeholder="epochs",     id="epochs-input")
-            yield Input(value="32",   placeholder="batch",      id="batch-input")
-            yield Input(value="500",  placeholder="steps/epoch",id="steps-input")
-            yield Input(value="3e-4", placeholder="lr",         id="lr-input")
-
-        with Horizontal():
-            yield Button("Start Training", id="train-btn", variant="success")
-            yield Button("Stop",           id="stop-btn",  variant="error")
-
-        yield Log(id="train-log", highlight=True)
-
-    @on(Button.Pressed, "#train-btn")
-    def start_training(self):
-        if self._proc and self._proc.poll() is None:
-            self.query_one("#train-log", Log).write_line(
-                "[yellow]Training already running.[/yellow]")
-            return
-
-        preset = self.query_one("#preset-select", Select).value or "small"
-        epochs = self.query_one("#epochs-input", Input).value or "5"
-        batch  = self.query_one("#batch-input",  Input).value or "32"
-        steps  = self.query_one("#steps-input",  Input).value or "500"
-        lr     = self.query_one("#lr-input",     Input).value or "3e-4"
-
-        log = self.query_one("#train-log", Log)
-        log.write_line(f"[bold]Starting training:[/bold] preset={preset} epochs={epochs} "
-                       f"batch={batch} steps={steps} lr={lr}")
-
-        cmd = [
-            sys.executable, "train.py",
-            "--preset", preset,
-            "--epochs", epochs,
-            "--batch",  batch,
-            "--steps",  steps,
-            "--lr",     lr,
-        ]
-        self._proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        self._stream_output()
-
-    @work(thread=True)
-    def _stream_output(self):
-        log = self.query_one("#train-log", Log)
-        if not self._proc:
-            return
-        for line in self._proc.stdout:
-            self.call_from_thread(log.write_line, line.rstrip())
-        rc = self._proc.wait()
-        self.call_from_thread(
-            log.write_line,
-            f"[bold {'green' if rc == 0 else 'red'}]Training finished (exit {rc})[/bold]"
-        )
-
-    @on(Button.Pressed, "#stop-btn")
-    def stop_training(self):
-        if self._proc and self._proc.poll() is None:
-            self._proc.terminate()
-            self.query_one("#train-log", Log).write_line("[red]Training stopped.[/red]")
-        else:
-            self.query_one("#train-log", Log).write_line("[yellow]No training process running.[/yellow]")
+            self.app.call_from_thread(log.write_line, f"Generation error: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +194,6 @@ class DumbGPTApp(App):
     TITLE = "DumbGPT"
     CSS = """
     Screen { background: $surface; }
-    TabbedContent { height: 1fr; }
     """
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
@@ -315,11 +206,7 @@ class DumbGPTApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with TabbedContent():
-            with TabPane("Chat", id="chat-pane"):
-                yield ChatTab()
-            with TabPane("Train", id="train-pane"):
-                yield TrainTab()
+        yield ChatTab()
         yield Footer()
 
 
