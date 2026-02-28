@@ -70,7 +70,6 @@ dependencies = [
     { name = "textual" },
     { name = "tiktoken" },
     { name = "torch" },
-    { name = "tqdm" },
 ]
 
 [package.dev-dependencies]
@@ -86,7 +85,6 @@ requires-dist = [
     { name = "textual", specifier = ">=6.2.1" },
     { name = "tiktoken", specifier = ">=0.12.0" },
     { name = "torch", specifier = ">=2.8.0", index = "https://download.pytorch.org/whl/xpu" },
-    { name = "tqdm", specifier = ">=4.67.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -719,18 +717,6 @@ wheels = [
     { url = "https://download.pytorch.org/whl/xpu/torch-2.9.1%2Bxpu-cp314-cp314-win_amd64.whl", hash = "sha256:dfe69347d120dbb577a4df2d4f35a61b881856353ab2c1cd4b0f66b7b3aa971a" },
     { url = "https://download.pytorch.org/whl/xpu/torch-2.9.1%2Bxpu-cp314-cp314t-linux_x86_64.whl", hash = "sha256:3a8a3722b18ad63d75e876bf2c053e60e3e5d0677d039b0b73537413644375b4" },
     { url = "https://download.pytorch.org/whl/xpu/torch-2.9.1%2Bxpu-cp314-cp314t-win_amd64.whl", hash = "sha256:4043d8acf1badae0878dfa7f3aac30151229e81ebeda0191727b5541aa7a1c6c" },
-]
-
-[[package]]
-name = "tqdm"
-version = "4.67.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd8dac228323f2777d886cb206987444e4bce66338dd4/tqdm-4.67.3.tar.gz", hash = "sha256:7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb", size = 169598, upload-time = "2026-02-03T17:35:53.048Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl", hash = "sha256:ee1e4c0e59148062281c49d80b25b67771a127c85fc9676d3be5f243206826bf", size = 78374, upload-time = "2026-02-03T17:35:50.982Z" },
 ]
 
 [[package]]
