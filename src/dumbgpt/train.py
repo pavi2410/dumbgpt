@@ -6,7 +6,7 @@ Trains a GPT model on a corpus using TikToken BPE tokenizer.
 Uses a streaming IterableDataset so the full corpus is never loaded into RAM.
 """
 
-import sys
+import math
 import random
 import time
 import argparse
@@ -18,7 +18,6 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, IterableDataset
 from rich.console import Console
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, MofNCompleteColumn
-from rich.table import Table
 from rich.panel import Panel
 
 from .model.transformer import GPTModel
@@ -28,96 +27,66 @@ from .model.transformer import GPTModel
 # Model presets – pick one with --preset
 # ---------------------------------------------------------------------------
 PRESETS = {
-    "small": dict(d_model=512, num_heads=8,  d_ff=2048, num_layers=8,  max_seq_len=512),   # ~10M
-    "base":  dict(d_model=768, num_heads=12, d_ff=3072, num_layers=12, max_seq_len=1024), # ~100M
+    "micro": dict(d_model=256, num_heads=4,  d_ff=1024, num_layers=4,  max_seq_len=256),   # ~7M  — fast iteration / debugging
+    "base":  dict(d_model=768, num_heads=12, d_ff=3072, num_layers=12, max_seq_len=1024),  # ~117M — main training target
 }
 
 
-# ---------------------------------------------------------------------------
-# Corpus helpers
-# ---------------------------------------------------------------------------
 console = Console()
 
-def iter_corpus_files(corpus_dir: Path):
-    """Yield (path, kind) for every .txt batch file in corpus/tinystories and corpus/fineweb."""
-    corpus_dir = Path(corpus_dir)
-    for ts_file in sorted((corpus_dir / "tinystories").glob("*.txt")) if (corpus_dir / "tinystories").exists() else []:
-        yield ts_file, "tinystories"
-    for fw_file in sorted((corpus_dir / "fineweb").glob("*.txt")) if (corpus_dir / "fineweb").exists() else []:
-        yield fw_file, "fineweb"
-
-
-def read_file_safe(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8", errors="ignore").strip()
-    except Exception:
-        return ""
-
 
 # ---------------------------------------------------------------------------
-# Streaming dataset – samples random windows from random files on the fly
+# Pre-training dataset sources and interleave weights
 # ---------------------------------------------------------------------------
-class StreamingCorpusDataset(IterableDataset):
+DATASET_SOURCES = [
+    # (hf_path, hf_split, text_field, mix_weight)
+    ("roneneldan/TinyStories",    "train", "text", 0.3),
+    ("HuggingFaceFW/fineweb-edu", "train", "text", 0.7),
+]
+
+
+class HFStreamingDataset(IterableDataset):
     """
-    Yields (input_ids, target_ids) pairs without loading the whole corpus.
-    
-    Handles both single-item files and batched files (with ---SEPARATOR---).
-    Each worker independently shuffles its file list and draws random windows
-    of length seq_len+1 from each file's token stream.
+    Streams tokenized windows directly from interleaved HuggingFace datasets.
+    No pre-download step: HF caches parquet shards locally on first access
+    and resumes automatically across runs.
+    Sources and mix weights live in DATASET_SOURCES above.
     """
 
-    def __init__(self, file_paths: list[Path], tokenizer, seq_len: int, steps_per_epoch: int):
-        self.file_paths = file_paths
+    def __init__(self, tokenizer, seq_len: int, steps: int, seed: int = 42):
         self.tokenizer = tokenizer
         self.seq_len = seq_len
-        self.steps_per_epoch = steps_per_epoch
+        self.steps = steps
+        self.seed = seed
+
+    def _build_stream(self):
+        from datasets import load_dataset, interleave_datasets
+        streams = [
+            load_dataset(path, split=split, streaming=True, trust_remote_code=False)
+            for path, split, _, _ in DATASET_SOURCES
+        ]
+        probs = [w for _, _, _, w in DATASET_SOURCES]
+        return interleave_datasets(streams, probabilities=probs, seed=self.seed)
 
     def __iter__(self):
-        worker_info = torch.utils.data.get_worker_info()
-        files = self.file_paths.copy()
-
-        # Split files across workers to avoid duplicate samples
-        if worker_info is not None:
-            per_worker = max(1, len(files) // worker_info.num_workers)
-            start = worker_info.id * per_worker
-            end = start + per_worker if worker_info.id < worker_info.num_workers - 1 else len(files)
-            files = files[start:end]
-            steps = max(1, self.steps_per_epoch // worker_info.num_workers)
-            seed = worker_info.id
-        else:
-            steps = self.steps_per_epoch
-            seed = 0
-
-        rng = random.Random(seed)
-        rng.shuffle(files)
-
+        rng = random.Random(self.seed)
         yielded = 0
-        while yielded < steps:
-            rng.shuffle(files)
-            for path in files:
-                if yielded >= steps:
-                    break
-                text = read_file_safe(path)
-                if not text:
-                    continue
-
-                # Handle batched files: split by separator and pick one item randomly
-                if "---STORY_SEPARATOR---" in text:
-                    items = [s.strip() for s in text.split("---STORY_SEPARATOR---") if s.strip()]
-                    text = rng.choice(items)
-                elif "---DOC_SEPARATOR---" in text:
-                    items = [s.strip() for s in text.split("---DOC_SEPARATOR---") if s.strip()]
-                    text = rng.choice(items)
-
-                tokens = self.tokenizer.encode(text)
-                if len(tokens) < self.seq_len + 1:
-                    continue
-                start = rng.randint(0, len(tokens) - self.seq_len - 1)
-                chunk = tokens[start: start + self.seq_len + 1]
-                input_ids = torch.tensor(chunk[:-1], dtype=torch.long)
-                target_ids = torch.tensor(chunk[1:],  dtype=torch.long)
-                yield input_ids, target_ids
-                yielded += 1
+        for sample in self._build_stream():
+            if yielded >= self.steps:
+                break
+            text = sample.get("text", "") or ""
+            if not text:
+                continue
+            tokens = self.tokenizer.encode(text)
+            if len(tokens) < self.seq_len + 1:
+                continue
+            start = rng.randint(0, len(tokens) - self.seq_len - 1)
+            chunk = tokens[start: start + self.seq_len + 1]
+            yield (
+                torch.tensor(chunk[:-1], dtype=torch.long),
+                torch.tensor(chunk[1:],  dtype=torch.long),
+            )
+            yielded += 1
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +104,20 @@ def get_device() -> torch.device:
 
 def save_checkpoint(model, config, path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"model_state_dict": model.state_dict(), "config": config, "tokenizer_type": "tiktoken"}, path)
+    # Unwrap torch.compile'd model before saving
+    raw = getattr(model, "_orig_mod", model)
+    torch.save({"model_state_dict": raw.state_dict(), "config": config, "tokenizer_type": "tiktoken"}, path)
+
+
+def build_lr_scheduler(optimizer, warmup_steps: int, total_steps: int, max_lr: float, min_lr: float):
+    """Linear warmup then cosine decay to min_lr."""
+    def _lr_lambda(step: int) -> float:
+        if step < warmup_steps:
+            return step / max(warmup_steps, 1)
+        progress = (step - warmup_steps) / max(total_steps - warmup_steps, 1)
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return min_lr / max_lr + (1.0 - min_lr / max_lr) * cosine
+    return optim.lr_scheduler.LambdaLR(optimizer, _lr_lambda)
 
 
 def load_checkpoint(path: Path, device: torch.device, use_checkpointing: bool = False):
@@ -161,41 +143,27 @@ def load_checkpoint(path: Path, device: torch.device, use_checkpointing: bool = 
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Train DumbGPT")
-    parser.add_argument("--preset",     default="small",  choices=list(PRESETS), help="Model size preset")
-    parser.add_argument("--checkpoint", action="store_true", help="Enable gradient checkpointing (saves VRAM, slower)")
-    parser.add_argument("--compile",    action="store_true", help="torch.compile the model (faster after warmup)")
-    parser.add_argument("--epochs",    type=int,   default=5)
-    parser.add_argument("--batch",     type=int,   default=32)
-    parser.add_argument("--lr",        type=float, default=3e-4)
-    parser.add_argument("--steps",     type=int,   default=500,  help="Training steps per epoch")
-    parser.add_argument("--val-steps", type=int,   default=50,   help="Validation steps per epoch")
-    parser.add_argument("--corpus",    default="corpus", help="Path to corpus directory")
-    parser.add_argument("--out",       default="models/model.pt", help="Output model path")
-    parser.add_argument("--resume",    default=None, help="Resume from checkpoint path")
+    parser.add_argument("--preset",     default="base",  choices=list(PRESETS), help="Model size preset")
+    parser.add_argument("--checkpoint", action="store_true", help="Enable gradient checkpointing")
+    parser.add_argument("--compile",    action="store_true", help="torch.compile the model")
+    parser.add_argument("--epochs",     type=int,   default=5)
+    parser.add_argument("--batch",      type=int,   default=32)
+    parser.add_argument("--lr",         type=float, default=3e-4)
+    parser.add_argument("--warmup",     type=int,   default=100,  help="LR warmup steps")
+    parser.add_argument("--steps",      type=int,   default=500,  help="Training steps per epoch")
+    parser.add_argument("--val-steps",  type=int,   default=50,   help="Validation steps per epoch")
+    parser.add_argument("--out",        default="models/model.pt", help="Output model path")
+    parser.add_argument("--resume",     default=None, help="Resume from checkpoint path")
     args = parser.parse_args()
 
     device = get_device()
+    # Free ~10-20% speedup on CUDA/XPU via TF32 tensor cores
+    torch.set_float32_matmul_precision("high")
     console.print(f"Device: {device}  |  PyTorch {torch.__version__}")
-
-    # ---- Corpus ----
-    corpus_dir = Path(args.corpus)
-    all_files = list(iter_corpus_files(corpus_dir))
-    if not all_files:
-        console.print(f"No corpus files found in {corpus_dir}")
-        sys.exit(1)
-
-    console.print(f"Corpus: {len(all_files)} files")
-
-    # Split files 90/10 for train/val
-    random.shuffle(all_files)
-    split = int(len(all_files) * 0.9)
-    train_files = [p for p, _ in all_files[:split]]
-    val_files   = [p for p, _ in all_files[split:]] or train_files[:max(1, len(train_files)//10)]
 
     # ---- Tokenizer ----
     tokenizer = tiktoken.get_encoding("gpt2")
     vocab_size = tokenizer.n_vocab
-    console.print(f"Vocab size: {vocab_size:,}")
 
     # ---- Model ----
     preset = PRESETS[args.preset]
@@ -209,25 +177,31 @@ def main():
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    console.print(f"Preset: {args.preset}  |  Params: {total_params:,} total / {trainable:,} trainable")
-    console.print(f"Config: {config}")
+    console.print(Panel(
+        f"Preset: [bold]{args.preset}[/]  |  Params: [bold]{total_params:,}[/] total / {trainable:,} trainable\n"
+        f"Config: {config}",
+        title="Model", border_style="blue",
+    ))
 
-    # ---- Data loaders ----
-    seq_len = config["max_seq_len"]
-    # Total samples per epoch = steps * batch_size
-    train_samples = args.steps * args.batch
-    val_samples   = args.val_steps * args.batch
-
-    train_ds = StreamingCorpusDataset(train_files, tokenizer, seq_len, train_samples)
-    val_ds   = StreamingCorpusDataset(val_files,   tokenizer, seq_len, val_samples)
-
-    train_loader = DataLoader(train_ds, batch_size=args.batch, num_workers=2, prefetch_factor=2)
-    val_loader   = DataLoader(val_ds,   batch_size=args.batch, num_workers=2, prefetch_factor=2)
-
-    # ---- Optimizer + scheduler ----
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.1, betas=(0.9, 0.95))
+    # ---- Data loaders (streaming directly from HuggingFace) ----
+    seq_len     = config["max_seq_len"]
     total_steps = args.epochs * args.steps
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=args.lr / 10)
+    # Use different seeds for train/val so they sample different documents
+    train_ds = HFStreamingDataset(tokenizer, seq_len, steps=args.steps * args.batch, seed=42)
+    val_ds   = HFStreamingDataset(tokenizer, seq_len, steps=args.val_steps * args.batch, seed=99)
+    # num_workers=0: HF streaming datasets are not fork-safe; CPU overhead is minimal vs GPU
+    train_loader = DataLoader(train_ds, batch_size=args.batch, num_workers=0)
+    val_loader   = DataLoader(val_ds,   batch_size=args.batch, num_workers=0)
+
+    # ---- Optimizer + scheduler (linear warmup + cosine decay) ----
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.1, betas=(0.9, 0.95))
+    scheduler = build_lr_scheduler(
+        optimizer,
+        warmup_steps=args.warmup,
+        total_steps=total_steps,
+        max_lr=args.lr,
+        min_lr=args.lr / 10,
+    )
 
     # Optional: torch.compile (speeds up training after warmup, XPU support may vary)
     if args.compile:

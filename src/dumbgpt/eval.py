@@ -20,7 +20,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn
 
-from .train import StreamingCorpusDataset, iter_corpus_files, load_checkpoint, get_device
+from .train import HFStreamingDataset, load_checkpoint, get_device
 
 console = Console()
 
@@ -28,19 +28,18 @@ console = Console()
 def compute_perplexity(
     model: torch.nn.Module,
     tokenizer,
-    files: list,
     seq_len: int,
     num_batches: int = 50,
     batch_size: int = 8,
     device: str = "cpu",
 ) -> tuple[float, float]:
-    """Estimate perplexity on a sample of corpus files.
+    """Estimate perplexity by streaming held-out samples from HuggingFace datasets.
 
     Returns:
         (perplexity, avg_cross_entropy_loss)
     """
     model.eval()
-    ds = StreamingCorpusDataset(files, tokenizer, seq_len, steps_per_epoch=num_batches * batch_size)
+    ds = HFStreamingDataset(tokenizer, seq_len, steps=num_batches * batch_size, seed=777)
     loader = DataLoader(ds, batch_size=batch_size, num_workers=0)
 
     total_loss = 0.0
@@ -74,6 +73,7 @@ def generate_sample(
     temperature: float = 0.8,
     top_k: int = 40,
     top_p: float = 0.9,
+    repetition_penalty: float = 1.3,
 ) -> tuple[str, float]:
     """Generate text and return (generated_text, tokens_per_sec)."""
     tokens = tokenizer.encode(prompt)
@@ -84,6 +84,7 @@ def generate_sample(
         out = model.generate(
             context, max_new_tokens,
             temperature=temperature, top_k=top_k, top_p=top_p,
+            repetition_penalty=repetition_penalty,
         )
     elapsed = time.perf_counter() - t0
 
@@ -97,10 +98,10 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--model",       default="models/best_model.pt", help="Checkpoint path")
-    parser.add_argument("--corpus",      default="corpus",               help="Corpus dir for perplexity")
     parser.add_argument("--ppl-batches", type=int, default=50,           help="Batches used for perplexity")
-    parser.add_argument("--tokens",      type=int, default=100,          help="Tokens to generate per prompt")
-    parser.add_argument("--temperature", type=float, default=0.8,        help="Sampling temperature")
+    parser.add_argument("--tokens",      type=int,   default=100,  help="Tokens to generate per prompt")
+    parser.add_argument("--temperature", type=float, default=0.8,  help="Sampling temperature")
+    parser.add_argument("--rep-penalty", type=float, default=1.3,  help="Repetition penalty (1.0=off, 1.3=moderate)")
     args = parser.parse_args()
 
     # --- Load ---
@@ -126,46 +127,62 @@ def main():
     console.print(Panel(info, title="Model", border_style="blue"))
 
     # --- Perplexity ---
-    corpus_files = [p for p, _ in iter_corpus_files(Path(args.corpus))]
-    if corpus_files:
-        ppl, loss = compute_perplexity(
-            model, tokenizer, corpus_files,
-            seq_len=config["max_seq_len"],
-            num_batches=args.ppl_batches,
-            device=device,
-        )
-        ppl_color = "green" if ppl < 100 else "yellow" if ppl < 500 else "red"
-        console.print(Panel(
-            f"Loss: [bold]{loss:.4f}[/]   Perplexity: [bold {ppl_color}]{ppl:.1f}[/]\n"
-            f"[dim](Untrained baseline ~{tokenizer.n_vocab:,}  │  GPT-2 small ~30 on WebText)[/]",
-            title=f"Perplexity  ({args.ppl_batches} batches × 8)", border_style=ppl_color,
-        ))
-    else:
-        console.print("[yellow]No corpus files found — skipping perplexity.[/]")
+    ppl, loss = compute_perplexity(
+        model, tokenizer,
+        seq_len=config["max_seq_len"],
+        num_batches=args.ppl_batches,
+        device=device,
+    )
+    ppl_color = "green" if ppl < 100 else "yellow" if ppl < 500 else "red"
+    console.print(Panel(
+        f"Loss: [bold]{loss:.4f}[/]   Perplexity: [bold {ppl_color}]{ppl:.1f}[/]\n"
+        f"[dim](Untrained baseline ~{tokenizer.n_vocab:,}  │  GPT-2 small ~30 on WebText)[/]",
+        title=f"Perplexity  ({args.ppl_batches} batches × 8)", border_style=ppl_color,
+    ))
 
     # --- Generation quality + throughput ---
-    prompts = [
-        "Once upon a time, there was a little girl named",
-        "Tom and his dog went to the park. Suddenly",
-        "The princess looked out the window and saw",
-        "One day, a small bunny found a",
-        "The big red ball rolled down the hill and",
+    # Prompts cover both TinyStories (narrative) and Fineweb-edu (factual/instructional) styles
+    prompt_groups: list[tuple[str, list[str]]] = [
+        ("Narrative (TinyStories style)", [
+            "Once upon a time, there was a little girl named",
+            "Tom and his dog went to the park. Suddenly",
+            "One day, a small bunny found a",
+        ]),
+        ("Factual / Science", [
+            "The solar system consists of the Sun and",
+            "Water is made up of hydrogen and oxygen atoms. When",
+            "Photosynthesis is the process by which plants",
+        ]),
+        ("Educational / How-to", [
+            "To solve a quadratic equation, you need to",
+            "The most important thing to remember when learning a new language is",
+            "Scientists use the scientific method to",
+        ]),
+        ("General Web / News", [
+            "Researchers at the university have discovered that",
+            "The new technology allows users to",
+            "According to recent studies, the best way to",
+        ]),
     ]
 
     table = Table(title="Generation Samples", border_style="cyan", show_lines=True)
-    table.add_column("Prompt",    style="bold",       max_width=35, overflow="fold")
-    table.add_column("Output",    style="dim",        max_width=55, overflow="fold")
-    table.add_column("tok/s",     justify="right",    style="green", width=7)
+    table.add_column("Category",  style="bold yellow",  max_width=20, overflow="fold")
+    table.add_column("Prompt",    style="bold",         max_width=30, overflow="fold")
+    table.add_column("Output",    style="dim",          max_width=50, overflow="fold")
+    table.add_column("tok/s",     justify="right",      style="green", width=7)
 
     throughputs = []
-    for prompt in prompts:
-        text, tps = generate_sample(
-            model, tokenizer, prompt,
-            max_new_tokens=args.tokens,
-            temperature=args.temperature,
-        )
-        throughputs.append(tps)
-        table.add_row(prompt, text.strip(), f"{tps:.1f}")
+    for category, prompts in prompt_groups:
+        for prompt in prompts:
+            text, tps = generate_sample(
+                model, tokenizer, prompt,
+                max_new_tokens=args.tokens,
+                temperature=args.temperature,
+                repetition_penalty=args.rep_penalty,
+            )
+            throughputs.append(tps)
+            table.add_row(category, prompt, text.strip(), f"{tps:.1f}")
+            category = ""  # only show category label on first row of each group
 
     console.print(table)
     avg_tps = sum(throughputs) / len(throughputs)
