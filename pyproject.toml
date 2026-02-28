@@ -13,6 +13,9 @@ dependencies = [
     "torch>=2.8.0",
 ]
 
+[project.scripts]
+tui = "dumbgpt.tui.app:main"
+
 [dependency-groups]
 dev = ["pytest>=8.4.2"]
 
