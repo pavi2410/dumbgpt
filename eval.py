@@ -3,40 +3,46 @@
 Console Model Evaluation - Test TikToken GPT model
 """
 
-import torch
+import sys
 from pathlib import Path
+import torch
 
-from src.dumbgpt.model.transformer import GPTModel
-from src.dumbgpt.tokenizer.tiktoken_tokenizer import TikTokenTokenizer
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+from dumbgpt.model.transformer import GPTModel
+from dumbgpt.tokenizer.tiktoken_tokenizer import TikTokenTokenizer
 
 
-def load_model():
+def load_model(model_path: str = "models/best_model.pt"):
     """Load the DumbGPT model."""
-    model_path = Path("models/pytorch_model.pt")
-    if not model_path.exists():
-        print("❌ Model not found: models/pytorch_model.pt")
+    path = Path(model_path)
+    if not path.exists():
+        # fallback
+        path = Path("models/model.pt")
+    if not path.exists():
+        print(f"❌ Model not found. Run train.py first.")
         return None, None
-    
-    print("Loading TikToken model...")
-    checkpoint = torch.load(model_path, map_location='cpu')
-    config = checkpoint['config']
-    
+
+    print(f"Loading model from {path}…")
+    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    config = checkpoint["config"]
+
     tokenizer = TikTokenTokenizer()
-    
+
     model = GPTModel(
-        vocab_size=tokenizer.vocab_size,
-        d_model=config['d_model'],
-        num_heads=config['num_heads'],
-        d_ff=config['d_ff'],
-        num_layers=config['num_layers'],
-        max_seq_len=config['max_seq_len']
+        vocab_size=config["vocab_size"],
+        d_model=config["d_model"],
+        num_heads=config["num_heads"],
+        d_ff=config["d_ff"],
+        num_layers=config["num_layers"],
+        max_seq_len=config["max_seq_len"],
     )
-    model.load_state_dict(checkpoint['model_state_dict'])
+    model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    
+
     params = sum(p.numel() for p in model.parameters())
-    print(f"✅ Model loaded! {params:,} parameters, vocab: {tokenizer.vocab_size:,}")
-    
+    print(f"✅ Loaded! {params:,} params  vocab={tokenizer.vocab_size:,}  "
+          f"d_model={config['d_model']}  layers={config['num_layers']}")
     return model, tokenizer
 
 
@@ -52,15 +58,12 @@ def evaluate_prompt(prompt, model, tokenizer, prompt_num):
         
         # Generate response
         with torch.no_grad():
-            generated = model.generate(
-                context, 
-                max_length=50, 
-                temperature=0.8
-            )
-            response = tokenizer.decode(generated.tolist())
-        
+            out = model.generate(context, max_new_tokens=50, temperature=0.8, top_k=50)
+            new_tokens = out[0, len(tokens):].tolist()
+            response = tokenizer.decode(new_tokens)
+
         print(f"🤖 Response: '{response}'")
-        print(f"📊 Tokens: {len(tokens)} → {len(generated.tolist())}")
+        print(f"📊 Tokens: {len(tokens)} → {len(tokens) + len(new_tokens)}")
         
     except Exception as e:
         print(f"❌ Error: {str(e)}")
