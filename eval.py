@@ -5,12 +5,12 @@ Console Model Evaluation - Test TikToken GPT model
 
 import sys
 from pathlib import Path
+import tiktoken
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from dumbgpt.model.transformer import GPTModel
-from dumbgpt.tokenizer.tiktoken_tokenizer import TikTokenTokenizer
 
 
 def load_model(model_path: str = "models/best_model.pt"):
@@ -27,7 +27,7 @@ def load_model(model_path: str = "models/best_model.pt"):
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     config = checkpoint["config"]
 
-    tokenizer = TikTokenTokenizer()
+    tokenizer = tiktoken.get_encoding("gpt2")
 
     model = GPTModel(
         vocab_size=config["vocab_size"],
@@ -41,7 +41,7 @@ def load_model(model_path: str = "models/best_model.pt"):
     model.eval()
 
     params = sum(p.numel() for p in model.parameters())
-    print(f"✅ Loaded! {params:,} params  vocab={tokenizer.vocab_size:,}  "
+    print(f"✅ Loaded! {params:,} params  vocab={tokenizer.n_vocab:,}  "
           f"d_model={config['d_model']}  layers={config['num_layers']}")
     return model, tokenizer
 

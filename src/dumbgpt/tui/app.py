@@ -4,6 +4,7 @@ DumbGPT TUI – Chat interface
 
 from pathlib import Path
 
+import tiktoken
 import torch
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -14,7 +15,6 @@ from textual.widgets import (
 )
 
 from ..model.transformer import GPTModel
-from ..tokenizer.tiktoken_tokenizer import TikTokenTokenizer
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ def list_saved_models() -> list[tuple[str, str]]:
 def load_model_from_path(path: str, device: torch.device):
     ckpt = torch.load(path, map_location=device, weights_only=False)
     cfg = ckpt["config"]
-    tok = TikTokenTokenizer()
+    tok = tiktoken.get_encoding("gpt2")
     model = GPTModel(
         vocab_size=cfg["vocab_size"],
         d_model=cfg["d_model"],

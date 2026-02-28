@@ -12,6 +12,7 @@ import time
 import argparse
 from pathlib import Path
 
+import tiktoken
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader, IterableDataset
@@ -21,7 +22,6 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from dumbgpt.model.transformer import GPTModel
-from dumbgpt.tokenizer.tiktoken_tokenizer import TikTokenTokenizer
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ def save_checkpoint(model, config, path: Path):
 def load_checkpoint(path: Path, device: torch.device):
     ckpt = torch.load(path, map_location=device, weights_only=False)
     cfg = ckpt["config"]
-    tok = TikTokenTokenizer()
+    tok = tiktoken.get_encoding("gpt2")
     model = GPTModel(
         vocab_size=cfg["vocab_size"],
         d_model=cfg["d_model"],
@@ -177,8 +177,8 @@ def main():
     val_files   = [p for p, _ in all_files[split:]] or train_files[:max(1, len(train_files)//10)]
 
     # ---- Tokenizer ----
-    tokenizer = TikTokenTokenizer()
-    vocab_size = tokenizer.vocab_size
+    tokenizer = tiktoken.get_encoding("gpt2")
+    vocab_size = tokenizer.n_vocab
     print(f"Vocab size: {vocab_size:,}")
 
     # ---- Model ----
