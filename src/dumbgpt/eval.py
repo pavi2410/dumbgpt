@@ -20,7 +20,8 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn
 
-from .train import HFStreamingDataset, load_checkpoint, get_device
+from .eval_data import CachedEvalDataset, DEFAULT_EVAL_CACHE, cache_is_valid, ensure_eval_cache
+from .train import load_checkpoint, get_device
 
 console = Console()
 
@@ -32,15 +33,36 @@ def compute_perplexity(
     num_batches: int = 50,
     batch_size: int = 8,
     device: str = "cpu",
+    *,
+    eval_cache: Path = DEFAULT_EVAL_CACHE,
+    rebuild_cache: bool = False,
 ) -> tuple[float, float]:
-    """Estimate perplexity by streaming held-out samples from HuggingFace datasets.
+    """Estimate perplexity on a fixed holdout saved with HuggingFace ``save_to_disk``.
+
+    First run streams from the Hub once to build ``eval_cache``; later runs load locally
+    via ``load_from_disk`` (no network).
 
     Returns:
         (perplexity, avg_cross_entropy_loss)
     """
     model.eval()
-    ds = HFStreamingDataset(tokenizer, seq_len, steps=num_batches * batch_size, seed=777)
-    loader = DataLoader(ds, batch_size=batch_size, num_workers=0)
+    num_samples = num_batches * batch_size
+
+    if rebuild_cache or not cache_is_valid(eval_cache, seq_len, num_samples):
+        console.print(
+            "[dim]Building eval holdout at[/] "
+            f"[bold]{eval_cache}[/] [dim](one-time Hub download, then save_to_disk)…[/]"
+        )
+    ensure_eval_cache(
+        tokenizer, seq_len, num_samples,
+        path=eval_cache, rebuild=rebuild_cache,
+    )
+    loader = DataLoader(
+        CachedEvalDataset(eval_cache),
+        batch_size=batch_size,
+        num_workers=0,
+        shuffle=False,
+    )
 
     total_loss = 0.0
     n = 0
@@ -102,6 +124,10 @@ def main():
     parser.add_argument("--tokens",      type=int,   default=100,  help="Tokens to generate per prompt")
     parser.add_argument("--temperature", type=float, default=0.8,  help="Sampling temperature")
     parser.add_argument("--rep-penalty", type=float, default=1.3,  help="Repetition penalty (1.0=off, 1.3=moderate)")
+    parser.add_argument("--eval-cache", default=str(DEFAULT_EVAL_CACHE),
+                        help="Directory for eval holdout (HuggingFace save_to_disk format)")
+    parser.add_argument("--rebuild-eval-cache", action="store_true",
+                        help="Re-download and rebuild the eval holdout from the Hub")
     args = parser.parse_args()
 
     # --- Load ---
@@ -127,17 +153,21 @@ def main():
     console.print(Panel(info, title="Model", border_style="blue"))
 
     # --- Perplexity ---
+    eval_cache = Path(args.eval_cache)
     ppl, loss = compute_perplexity(
         model, tokenizer,
         seq_len=config["max_seq_len"],
         num_batches=args.ppl_batches,
         device=device,
+        eval_cache=eval_cache,
+        rebuild_cache=args.rebuild_eval_cache,
     )
     ppl_color = "green" if ppl < 100 else "yellow" if ppl < 500 else "red"
     console.print(Panel(
         f"Loss: [bold]{loss:.4f}[/]   Perplexity: [bold {ppl_color}]{ppl:.1f}[/]\n"
         f"[dim](Untrained baseline ~{tokenizer.n_vocab:,}  │  GPT-2 small ~30 on WebText)[/]",
         title=f"Perplexity  ({args.ppl_batches} batches × 8)", border_style=ppl_color,
+        subtitle=f"[dim]{eval_cache}[/]",
     ))
 
     # --- Generation quality + throughput ---

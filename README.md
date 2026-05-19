@@ -68,8 +68,11 @@ uv run tui
 
 ### Evaluate a Model
 ```bash
-# Run evaluation on test prompts
+# First run builds data/eval_holdout/ via HuggingFace save_to_disk (one Hub download)
 uv run eval
+
+# Rebuild the local eval holdout
+uv run eval --rebuild-eval-cache
 ```
 
 ## Model Configurations

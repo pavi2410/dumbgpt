@@ -209,3 +209,6 @@ corpus/
 # Model files
 *.pkl
 models/
+
+# Eval holdout (datasets save_to_disk; built on first `uv run eval`)
+data/
