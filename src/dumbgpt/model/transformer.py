@@ -1,6 +1,22 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from dataclasses import dataclass
+
+
+# ---------------------------------------------------------------------------
+# KV cache (inference only)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LayerKVCache:
+    """Per-layer cached keys and values for autoregressive decode."""
+    k: torch.Tensor | None = None  # (B, n_heads, T_past, head_dim)
+    v: torch.Tensor | None = None
+
+
+def empty_kv_cache(num_layers: int) -> list[LayerKVCache]:
+    return [LayerKVCache() for _ in range(num_layers)]
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +60,7 @@ class CausalSelfAttention(nn.Module):
     """
     Multi-head causal self-attention using PyTorch's fused scaled_dot_product_attention.
     Automatically selects Flash Attention, memory-efficient, or math backend per device.
+    Supports optional KV cache for incremental inference decode.
     """
     def __init__(self, d_model: int, num_heads: int, dropout: float = 0.0):
         super().__init__()
@@ -54,18 +71,37 @@ class CausalSelfAttention(nn.Module):
         self.proj = nn.Linear(d_model, d_model, bias=False)
         self.dropout = dropout
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        freqs_cis: torch.Tensor,
+        kv_cache: LayerKVCache | None = None,
+    ) -> torch.Tensor:
         B, T, C = x.shape
         q, k, v = self.qkv(x).split(C, dim=2)
         q = q.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
         k = k.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
         v = v.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
         q, k = apply_rope(q, k, freqs_cis)
+
+        using_cache = kv_cache is not None
+        if using_cache and kv_cache.k is not None:
+            k = torch.cat([kv_cache.k, k], dim=2)
+            v = torch.cat([kv_cache.v, v], dim=2)
+            is_causal = False
+        else:
+            is_causal = True
+
         out = F.scaled_dot_product_attention(
             q, k, v,
             dropout_p=self.dropout if self.training else 0.0,
-            is_causal=True,
+            is_causal=is_causal,
         )
+
+        if using_cache:
+            kv_cache.k = k
+            kv_cache.v = v
+
         return self.proj(out.transpose(1, 2).contiguous().view(B, T, C))
 
 
@@ -93,8 +129,13 @@ class TransformerBlock(nn.Module):
         self.ffn_norm  = RMSNorm(d_model)
         self.ffn       = SwiGLU(d_model, d_ff)
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-        x = x + self.attn(self.attn_norm(x), freqs_cis)
+    def forward(
+        self,
+        x: torch.Tensor,
+        freqs_cis: torch.Tensor,
+        kv_cache: LayerKVCache | None = None,
+    ) -> torch.Tensor:
+        x = x + self.attn(self.attn_norm(x), freqs_cis, kv_cache)
         x = x + self.ffn(self.ffn_norm(x))
         return x
 
@@ -112,6 +153,7 @@ class GPTModel(nn.Module):
       - Fused scaled_dot_product_attention (Flash Attention when available)
       - Weight tying (token_emb <-> lm_head)
       - Gradient checkpointing support
+      - KV cache for fast autoregressive inference
     """
 
     def __init__(self, vocab_size: int, d_model: int, num_heads: int, d_ff: int,
@@ -154,18 +196,26 @@ class GPTModel(nn.Module):
             self._int8_enabled = True
         return self
 
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        kv_caches: list[LayerKVCache] | None = None,
+        start_pos: int = 0,
+    ) -> torch.Tensor:
         B, T = input_ids.shape
-        assert T <= self.max_seq_len, f"Sequence length {T} > max_seq_len {self.max_seq_len}"
+        assert start_pos + T <= self.max_seq_len, (
+            f"Position {start_pos + T} exceeds max_seq_len {self.max_seq_len}"
+        )
 
         x = self.emb_drop(self.token_emb(input_ids))
-        freqs_cis = self.freqs_cis[:T]
+        freqs_cis = self.freqs_cis[start_pos : start_pos + T]
 
-        for block in self.blocks:
+        for i, block in enumerate(self.blocks):
+            cache = kv_caches[i] if kv_caches is not None else None
             if self.use_checkpointing and self.training:
                 x = torch.utils.checkpoint.checkpoint(block, x, freqs_cis, use_reentrant=False)
             else:
-                x = block(x, freqs_cis)
+                x = block(x, freqs_cis, cache)
 
         return self.lm_head(self.norm(x))
 
@@ -174,12 +224,54 @@ class GPTModel(nn.Module):
         logits = self.forward(input_ids)
         return F.cross_entropy(logits.view(-1, self.vocab_size), target_ids.view(-1))
 
+    def _sample_next_token(
+        self,
+        logits: torch.Tensor,
+        generated: list[int],
+        temperature: float,
+        top_k: int,
+        top_p: float,
+        repetition_penalty: float,
+    ) -> torch.Tensor:
+        """Sample one token from last-position logits. logits: (1, vocab_size)."""
+        logits = logits / max(temperature, 1e-6)
+
+        if repetition_penalty != 1.0:
+            for token_id in set(generated[-self.max_seq_len:]):
+                logits[0, token_id] /= repetition_penalty
+
+        if top_k > 0:
+            top_vals, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+            logits[logits < top_vals[:, -1:]] = float("-inf")
+
+        if 0.0 < top_p < 1.0:
+            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+            cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+            sorted_indices_to_remove = cumulative_probs > top_p
+            sorted_indices_to_remove[..., 0] = False
+            indices_to_remove = sorted_indices_to_remove.scatter(
+                -1, sorted_indices, sorted_indices_to_remove
+            )
+            logits[indices_to_remove] = float("-inf")
+
+        return torch.multinomial(F.softmax(logits, dim=-1), num_samples=1)
+
+    def _prefill(
+        self,
+        input_ids: torch.Tensor,
+        kv_caches: list[LayerKVCache],
+        start_pos: int = 0,
+    ) -> torch.Tensor:
+        """Run forward on a chunk and fill KV caches. Returns logits (B, T, vocab)."""
+        return self.forward(input_ids, kv_caches=kv_caches, start_pos=start_pos)
+
     @torch.no_grad()
     def generate(self, context: torch.Tensor, max_new_tokens: int,
                  temperature: float = 1.0, top_k: int = 50,
                  top_p: float = 0.9, repetition_penalty: float = 1.0) -> torch.Tensor:
         """
         Autoregressive generation with top-k, top-p (nucleus) sampling, and repetition penalty.
+        Uses KV caching so each new token only runs one forward step over a single token.
 
         Args:
             context: (1, T) tensor of prompt token ids
@@ -194,29 +286,36 @@ class GPTModel(nn.Module):
         self.eval()
         device = next(self.parameters()).device
         ctx = context.to(device)
-        generated = []
+        generated: list[int] = []
+        kv_caches: list[LayerKVCache] | None = None
+        start_pos = 0
 
         for _ in range(max_new_tokens):
-            ctx_cond = ctx if ctx.size(1) <= self.max_seq_len else ctx[:, -self.max_seq_len:]
-            logits = self.forward(ctx_cond)[:, -1, :] / max(temperature, 1e-6)
+            if ctx.size(1) > self.max_seq_len:
+                ctx = ctx[:, -self.max_seq_len :]
+                kv_caches = None
+                start_pos = 0
 
-            if repetition_penalty != 1.0:
-                for token_id in set(generated[-self.max_seq_len:]):
-                    logits[0, token_id] /= repetition_penalty
+            if kv_caches is None:
+                kv_caches = empty_kv_cache(len(self.blocks))
+                logits = self._prefill(ctx, kv_caches, start_pos=0)
+                start_pos = ctx.size(1)
+            else:
+                logits = self.forward(
+                    ctx[:, -1:],
+                    kv_caches=kv_caches,
+                    start_pos=start_pos,
+                )
+                start_pos += 1
 
-            if top_k > 0:
-                top_vals, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < top_vals[:, -1:]] = float('-inf')
-
-            if 0.0 < top_p < 1.0:
-                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-                cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-                sorted_indices_to_remove = cumulative_probs > top_p
-                sorted_indices_to_remove[..., 0] = False
-                indices_to_remove = sorted_indices_to_remove.scatter(-1, sorted_indices, sorted_indices_to_remove)
-                logits[indices_to_remove] = float('-inf')
-
-            next_token = torch.multinomial(F.softmax(logits, dim=-1), num_samples=1)
+            next_token = self._sample_next_token(
+                logits[:, -1, :],
+                generated,
+                temperature,
+                top_k,
+                top_p,
+                repetition_penalty,
+            )
             generated.append(next_token.item())
             ctx = torch.cat([ctx, next_token], dim=1)
 

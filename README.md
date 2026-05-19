@@ -139,7 +139,7 @@ This project demonstrates the evolution from educational NumPy code to productio
 - [x] INT8 quantization for inference
 - [x] HuggingFace dataset streaming (no pre-download)
 - [x] Linear warmup + cosine LR decay
-- [ ] KV caching for faster inference
+- [x] KV caching for faster inference
 - [ ] SFT / instruction fine-tuning (smoltalk + LIMA)
 - [ ] Chat template + special tokens
 
